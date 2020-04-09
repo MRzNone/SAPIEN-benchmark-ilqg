@@ -31,4 +31,5 @@
 *.out
 *.app
 
-**/.ipynb_checkpoints/Humanoid-ilqr-checkpoint.ipynb
+.ipynb_checkpoints/**
+*.pyc
