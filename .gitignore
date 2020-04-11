@@ -33,3 +33,5 @@
 
 .ipynb_checkpoints/**
 *.pyc
+
+**/imgui.ini
