@@ -10,8 +10,9 @@ A benchmark for [Synthesis and Stabilization of Complex Behaviors through Online
   - wrap control for ease of use :heavy_check_mark:
 - implement i-lqg :heavy_check_mark:
 - Solving Ant task
-  - Handcraft forward kinematics
-  - Adjust fu, fx (final cost derivative respect to x u)
+  - Handcraft forward kinematics :heavy_check_mark:
+  - Adjust fu, fx (final cost derivative respect to x u) :heavy_check_mark:
+  - Need better fu, fx
 - optimize?
 - repeat for
   - swimmer
@@ -29,3 +30,5 @@ ANT
       - naming convetion: q[something].  e.g. qpos, qvel
   - Second order derivative of final cost function requires the term d2x/dq2, x is cartesian, q is general coord
     - Writing my own forward kinematics.  f: q -> x (local cartesian coord respect to robot base)
+  - derivatives are exploding as I have very inaccurate fu, fx. Error propagates very quickly
+    - Might be able to do derive derivative in generalised coordinate from cartesian coord?  Since linear ops
