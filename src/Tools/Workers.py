@@ -1,5 +1,3 @@
-from idlelib.rpc import request_queue
-
 import sapien.core as sapien
 from sapien.core import Pose
 import jax.numpy as np
@@ -7,7 +5,7 @@ import numpy as onp
 import time
 from multiprocessing import Queue, Process, Array, Value
 import ctypes as c
-from . import misc
+from . import misc, ModelDerivator
 
 
 class Worker(Process):
@@ -24,11 +22,7 @@ class Worker(Process):
         self.dof = self.robot.dof
 
     def get_state(self):
-        qpos = self.robot.get_qpos()
-        pose = self.robot.get_pose()
-
-        return onp.concatenate((qpos, pose.p, pose.q))
-
+        return misc.get_state(self.robot)
 
 
     def fu(self, ini_pack, u1, u2, index):
@@ -167,7 +161,16 @@ class SimWorker:
 
         self.reset()
 
+    def flush_work(self):
+        while not self.request_queue.empty():
+            self.request_queue.get()
+
+        with self.num_task.get_lock():
+            self.num_task.value = 0
+
     def get_pack(self):
+        self.flush_work()
+
         with self.num_task.get_lock():
             self.num_task.value = 1
 
@@ -175,7 +178,7 @@ class SimWorker:
         self.request_queue.put(wok_args)
 
         # block until done
-        while self.num_task.value > 0:
+        while self.num_task.value > 0 and self.request_queue.qsize() > 0:
             time.sleep(0.00001)
 
         pack = self.ans_arr[:self.num_pack]
@@ -188,6 +191,7 @@ class SimWorker:
         self.set(self.pack)
 
     def set(self, pack):
+        self.flush_work()
         with self.num_task.get_lock():
             self.num_task.value = 1
 
@@ -196,10 +200,11 @@ class SimWorker:
         self.request_queue.put(wok_args)
 
         # block until done
-        while self.num_task.value > 0:
+        while self.num_task.value > 0 and self.request_queue.qsize() > 0:
             time.sleep(0.00001)
 
     def sim(self, u):
+        self.flush_work()
         with self.num_task.get_lock():
             self.num_task.value = 1
 
@@ -207,14 +212,14 @@ class SimWorker:
         self.request_queue.put(wok_args)
 
         # block until done
-        while self.num_task.value > 0:
+        while self.num_task.value > 0 and self.request_queue.qsize() > 0:
             time.sleep(0.00001)
 
         state = self.ans_arr[:self.num_x]
         return state
 
 
-class DerivativeFactory:
+class DerivativeFactory(ModelDerivator):
     def __init__(self, num_x, num_u, dof, create_scene, num_workers, time_step, debug):
         self.num_u = num_u
         self.num_x = num_x
@@ -229,10 +234,18 @@ class DerivativeFactory:
     def set_pack(self, pack):
         self.iniPack = pack
 
-    def mp_num_fu(self, u, eps=1e-3):
+    def flush_work(self):
+        while not self.request_queue.empty():
+            self.request_queue.get()
+
+        with self.num_task.get_lock():
+            self.num_task.value = 0
+
+    def fu(self, u, x, eps=1e-3):
         '''
             Only doing pos now, return (n_x, n_u)
         '''
+        self.flush_work()
 
         ini_pack = self.iniPack
 
@@ -259,7 +272,7 @@ class DerivativeFactory:
             self.request_queue.put(wok_args)
 
         # block until done
-        while self.num_task.value > 0:
+        while self.num_task.value > 0 and self.request_queue.qsize() > 0:
             time.sleep(0.00001)
 
         res = self.ans_arr[:self.num_u] / (2 * eps)
@@ -267,10 +280,12 @@ class DerivativeFactory:
 
         return res
 
-    def mp_num_fx(self, u, ini_state, eps=1e-3):
+    def mp_num_fx(self, u, x, eps=1e-3):
         '''
             Only doing pos now, return (n_x, n_x)
         '''
+        self.flush_work()
+
         ini_pack = self.iniPack
 
         u = u.tolist()
@@ -287,15 +302,15 @@ class DerivativeFactory:
             # ini_pack, u, state, new_val, index
             if i < self.dof:
                 state = 'q_pos'
-                new_val2 = ini_state[:self.dof].tolist()
+                new_val2 = x[:self.dof].tolist()
                 new_val2[i] += eps
 
-                new_val1 = ini_state[:self.dof].tolist()
+                new_val1 = x[:self.dof].tolist()
                 new_val1[i] += eps
             else:
                 state = 'robo_pos'
-                p = ini_state[self.dof: self.dof + 3].tolist()
-                q = ini_state[-4:].tolist()
+                p = x[self.dof: self.dof + 3].tolist()
+                q = x[-4:].tolist()
 
                 j = i - self.dof
 
@@ -307,8 +322,8 @@ class DerivativeFactory:
 
                 new_val2 = (p, q)
 
-                p = ini_state[self.dof: self.dof + 3].tolist()
-                q = ini_state[-4:].tolist()
+                p = x[self.dof: self.dof + 3].tolist()
+                q = x[-4:].tolist()
 
                 j = i - self.dof
 
@@ -325,7 +340,7 @@ class DerivativeFactory:
 
             self.request_queue.put(wok_args)
 
-        while self.num_task.value > 0:
+        while self.num_task.value > 0 and self.request_queue.qsize() > 0:
             time.sleep(0.00001)
 
         res = self.ans_arr[:self.num_x] / (2 * eps)

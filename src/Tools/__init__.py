@@ -1,5 +1,4 @@
 from . import misc
-from . import NumSim
-from . import Workers
+from .ModelDerivator import ModelDerivator
 from .Workers import DerivativeFactory, SimWorker
-from .NumSim import ForwardKinematics
+from .NumSim import ForwardKinematics, NumForwardDynamicsDer

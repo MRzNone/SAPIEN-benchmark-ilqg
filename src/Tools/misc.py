@@ -1,6 +1,7 @@
 import jax.numpy as np
 import jax
 import numpy as onp
+import sapien.core as sapien
 
 links_cache = {}
 joints_cache = {}
@@ -120,13 +121,14 @@ def get_joint_state(robot):
     return np.array(state)
 
 
-def get_state(robot):
+def get_state(robot:sapien.Articulation):
     '''
         dof + 3 + 4
         [qpos(8), pos(3), quat(4)]
     '''
-    ant_pos = robot.get_pose()
-    return np.concatenate((robot.get_qpos(), ant_pos.p, ant_pos.q))
+    # ant_pos = robot.get_pose()
+    # return np.concatenate((robot.get_qpos(), ant_pos.p, ant_pos.q))
+    return onp.array(robot.get_qpos())
 
 
 def compose_p(pose):
