@@ -4,7 +4,7 @@ import numpy as onp
 import jax.numpy as np
 from jax import jit, jacfwd, jacrev, grad
 from ilqr import ILQR
-from tqdm import trange
+from datetime import datetime
 
 # from jax.config import config
 # config.update("jax_debug_nans", True)
@@ -133,7 +133,6 @@ for i in range(horizon):
     s0.step()
 robot.unpack(bak_pack)
 
-ctrl = []
 
 vx = jacfwd(final_cost)
 vxx = jacfwd(vx)
@@ -144,12 +143,19 @@ for x in x_seq:
     vx_ca.append(vx(x))
     vxx_ca.append(vxx(x))
 
+# records
+ctrl_record = []
+x_record = []
+u_record = []
+run_cost_record = []
+f_cost_record = []
+
 render_controller.show_window()
 for i in range(1000):
     x_seq, u_seq, pack_seq = ilqr.predict(x_seq, u_seq, pack_seq)
 
     u = u_seq[0]
-    ctrl.append(u)
+    ctrl_record.append(u)
 
     robot.set_qf(u)
     s0.step()
@@ -159,9 +165,20 @@ for i in range(1000):
     new_x = misc.get_state(robot)
     new_pack = robot.pack()
 
-    cost = final_cost(x_seq[-1]) + onp.sum([running_cost(x, u) for x, u in zip(x_seq, u_seq)])
-    print(f"ITER {i}\ncost: {cost}\nu: {u}")
+    f_cost = final_cost(x_seq[-1])
+    run_cost = onp.sum([running_cost(x, u) for x, u in zip(x_seq[:-1], u_seq[:-1])])
+    cost = f_cost + run_cost
+
+    print(f"ITER {i}\nrun cost: {run_cost}; final cost: {f_cost}; toal cost: {cost}\nu: {u}")
     x_seq[0] = new_x
     pack_seq[0] = new_pack
 
-np.save('ctrl', ctrl)
+records = {
+    'ctrl_record': ctrl_record,
+    'x_record': x_record,
+    'u_record': u_record,
+    'run_cost_record': run_cost_record,
+    'f_cost_record': f_cost_record
+}
+
+np.save('records' + str(datetime.utcnow()), records)

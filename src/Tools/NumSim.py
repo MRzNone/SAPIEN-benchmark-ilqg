@@ -125,60 +125,60 @@ class NumForwardDynamicsDer(ModelDerivator):
         """
 
         return np.eye(self.num_x)
-        res = []
-
-        orig_pack = self.robot.pack()
-        orig_x = self.robot.get_qpos()[:self.robot.dof].tolist()
-        for i in range(self.num_x):
-            self.robot.unpack(self.pack)
-            a2, a1 = None, None
-
-            if i < self.robot.dof:
-                new_x1 = orig_x.copy()
-                new_x2 = orig_x.copy()
-
-                new_x1[i] -= eps
-                new_x2[i] += eps
-
-                self.robot.set_qpos(new_x1)
-                a1 = self.robot.compute_forward_dynamics(u)
-                self.robot.set_qpos(new_x2)
-                a2 = self.robot.compute_forward_dynamics(u)
-            else:
-                check = i - self.robot.dof
-                index = check if check < 3 else check - 3
-
-                robo_pose = self.robot.get_pose()
-                p1 = robo_pose.p.tolist()
-                q1 = robo_pose.q.tolist()
-
-                p2 = p1.copy()
-                q2 = q1.copy()
-
-                if check < 3:
-                    p1[index] -= eps
-                    p2[index] += eps
-                else:
-                    q1[index] -= eps
-                    q2[index] += eps
-
-                    # sketchy normalization
-                    q1 = q1 / np.linalg.norm(q1)
-                    q1 = q1 if q1[0] > 0 else -q1
-
-                    q2 = q2 / np.linalg.norm(q2)
-                    q2 = q2 if q2[0] > 0 else -q2
-
-                self.robot.set_pose(Pose(p1, q1))
-                a1 = self.robot.compute_forward_dynamics(u)
-
-                self.robot.set_pose(Pose(p2, q2))
-                a2 = self.robot.compute_forward_dynamics(u)
-
-            res.append(a2 - a1)
-        self.robot.unpack(orig_pack)
-
-        return np.array(res).T * self.timestep / 2.0
+        # res = []
+        #
+        # orig_pack = self.robot.pack()
+        # orig_x = self.robot.get_qpos()[:self.robot.dof].tolist()
+        # for i in range(self.num_x):
+        #     self.robot.unpack(self.pack)
+        #     a2, a1 = None, None
+        #
+        #     if i < self.robot.dof:
+        #         new_x1 = orig_x.copy()
+        #         new_x2 = orig_x.copy()
+        #
+        #         new_x1[i] -= eps
+        #         new_x2[i] += eps
+        #
+        #         self.robot.set_qpos(new_x1)
+        #         a1 = self.robot.compute_forward_dynamics(u)
+        #         self.robot.set_qpos(new_x2)
+        #         a2 = self.robot.compute_forward_dynamics(u)
+        #     else:
+        #         check = i - self.robot.dof
+        #         index = check if check < 3 else check - 3
+        #
+        #         robo_pose = self.robot.get_pose()
+        #         p1 = robo_pose.p.tolist()
+        #         q1 = robo_pose.q.tolist()
+        #
+        #         p2 = p1.copy()
+        #         q2 = q1.copy()
+        #
+        #         if check < 3:
+        #             p1[index] -= eps
+        #             p2[index] += eps
+        #         else:
+        #             q1[index] -= eps
+        #             q2[index] += eps
+        #
+        #             # sketchy normalization
+        #             q1 = q1 / np.linalg.norm(q1)
+        #             q1 = q1 if q1[0] > 0 else -q1
+        #
+        #             q2 = q2 / np.linalg.norm(q2)
+        #             q2 = q2 if q2[0] > 0 else -q2
+        #
+        #         self.robot.set_pose(Pose(p1, q1))
+        #         a1 = self.robot.compute_forward_dynamics(u)
+        #
+        #         self.robot.set_pose(Pose(p2, q2))
+        #         a2 = self.robot.compute_forward_dynamics(u)
+        #
+        #     res.append(a2 - a1)
+        # self.robot.unpack(orig_pack)
+        #
+        # return np.array(res).T * self.timestep / 2.0
 
     def fu(self, u: np.array, x: np.array, eps: float = 1e-3) -> np.array:
         """

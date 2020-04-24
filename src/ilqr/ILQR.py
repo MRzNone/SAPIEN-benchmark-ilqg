@@ -1,6 +1,6 @@
 import jax.numpy as np
 from jax import jit, jacfwd, jacrev, grad
-from tqdm import tqdm, trange
+from tqdm.notebook import tqdm, trange
 
 from Tools import SimWorker, misc, ModelDerivator
 
@@ -72,12 +72,12 @@ class ILQR:
         k_seq = [None] * self.horizon
         kk_seq = [None] * self.horizon
 
-        debug_dict = {key: [] for key in
-                      ['k', 'kk', 'inv_qq', 'lx', 'lu', 'lxx', 'luu', 'lux', 'fx', 'fu', 'vx', 'vxx', 'qx', 'qu',
-                       'qxx', 'quu', 'qux', 'x', 'u']}
+        # debug_dict = {key: [] for key in
+        #               ['k', 'kk', 'inv_qq', 'lx', 'lu', 'lxx', 'luu', 'lux', 'fx', 'fu', 'vx', 'vxx', 'qx', 'qu',
+        #                'qxx', 'quu', 'qux', 'x', 'u']}
 
-        # for i in tqdm(range(self.horizon - 2, -1, -1), desc='backward', leave=False):
-        for i in range(self.horizon - 2, -1, -1):
+        for i in tqdm(range(self.horizon - 2, -1, -1), desc='backward', leave=False):
+        # for i in range(self.horizon - 2, -1, -1):
             if self.packs is not None:
                 self.model_der.set_pack(self.packs[i])
 
@@ -126,49 +126,44 @@ class ILQR:
             v_x_seq[i] = new_vx
             v_xx_seq[i] = new_vxx
 
-            #             if i == 0:
-            Ms = [k, kk, inv_quu, lx, lu, lxx, luu, lux, fx, fu, vx, vxx, q_x, q_u, q_xx, q_uu, q_ux, x, u,
-                  x_seq[i + 1]]
+            # Ms = [k, kk, inv_quu, lx, lu, lxx, luu, lux, fx, fu, vx, vxx, q_x, q_u, q_xx, q_uu, q_ux, x, u,
+            #       x_seq[i + 1]]
+            #
+            # if self.DEBUG and np.any([misc.check_val(m) for m in Ms]):
+            #     names = ['k', 'kk', 'inv_qq', 'lx', 'lu', 'lxx', 'luu', 'lux', 'fx', 'fu', 'vx', 'vxx', 'qx', 'qu',
+            #              'qxx',
+            #              'quu', 'qux', 'x', 'u', 'last_x']
+            #
+            #     print(f"\n\n-------------ITER {i}------------------------------")
+            #     for n, m in zip(names, Ms):
+            #         print(f"{n}\n\t{np.max(np.abs(m))}\n")
+            #
+            #     #             print(f"INVQUU:\n\t {inv_quu}")
+            #     #             print(f"QU:\n\t {inv_quu}")
+            #     #             print(f"k:\n\t {k}\n\n\n")
+            #     raise Exception("ILQR Invalid")
+            #
+            # Ms = [k, kk, inv_quu, lx, lu, lxx, luu, lux, fx, fu, vx, vxx, q_x, q_u, q_xx, q_uu, q_ux, x, u]
+            # names = ['k', 'kk', 'inv_qq', 'lx', 'lu', 'lxx', 'luu', 'lux', 'fx', 'fu', 'vx', 'vxx', 'qx', 'qu',
+            #          'qxx', 'quu', 'qux', 'x', 'u']
+            # for n, val in zip(names, Ms):
+            #     debug_dict[n].append(np.array(val).tolist())
 
-            if self.DEBUG and np.any([misc.check_val(m) for m in Ms]):
-                names = ['k', 'kk', 'inv_qq', 'lx', 'lu', 'lxx', 'luu', 'lux', 'fx', 'fu', 'vx', 'vxx', 'qx', 'qu',
-                         'qxx',
-                         'quu', 'qux', 'x', 'u', 'last_x']
-
-                print(f"\n\n-------------ITER {i}------------------------------")
-                for n, m in zip(names, Ms):
-                    print(f"{n}\n\t{np.max(np.abs(m))}\n")
-
-                #             print(f"INVQUU:\n\t {inv_quu}")
-                #             print(f"QU:\n\t {inv_quu}")
-                #             print(f"k:\n\t {k}\n\n\n")
-                raise Exception("ILQR Invalid")
-
-            Ms = [k, kk, inv_quu, lx, lu, lxx, luu, lux, fx, fu, vx, vxx, q_x, q_u, q_xx, q_uu, q_ux, x, u]
-            names = ['k', 'kk', 'inv_qq', 'lx', 'lu', 'lxx', 'luu', 'lux', 'fx', 'fu', 'vx', 'vxx', 'qx', 'qu',
-                     'qxx', 'quu', 'qux', 'x', 'u']
-            for n, val in zip(names, Ms):
-                debug_dict[n].append(np.array(val).tolist())
-
-        # import json
-        #
-        # with open('debug.json', 'w') as fp:
-        #     json.dump(debug_dict, fp)
         return k_seq, kk_seq
 
     def forward(self, x_seq, u_seq, k_seq, kk_seq):
         new_x_seq = [None] * self.horizon
         new_u_seq = [None] * self.horizon
 
-        new_x_seq[0] = x_seq[0]  # copy
+        new_x_seq[0] = x_seq[0]
 
         if self.packs is not None:
             packs = [self.packs[0]]
         else:
             packs = None
 
-        # for i in trange(self.horizon - 1, desc='forward', leave=False):
-        for i in range(self.horizon - 1):
+        for i in trange(self.horizon - 1, desc='forward', leave=False):
+        # for i in range(self.horizon - 1):
             x = new_x_seq[i]
 
             new_u = u_seq[i] + k_seq[i] + kk_seq[i] @ (x - x_seq[i])
@@ -179,9 +174,9 @@ class ILQR:
                 pack = self.model_sim.get_pack()
                 packs.append(pack)
 
-            Ms = [new_u, new_x, pack, k_seq[i], kk_seq[i]]
-            if self.DEBUG and np.any([misc.check_val(m) for m in Ms]):
-                print(f"ITER {i}\nU:{new_u}\nX:{new_x}\nPack:{pack}")
+            # Ms = [new_u, new_x, pack, k_seq[i], kk_seq[i]]
+            # if self.DEBUG and np.any([misc.check_val(m) for m in Ms]):
+            #     print(f"ITER {i}\nU:{new_u}\nX:{new_x}\nPack:{pack}")
 
             new_u_seq[i] = new_u
             new_x_seq[i + 1] = new_x
@@ -195,8 +190,8 @@ class ILQR:
     def predict(self, x_seq, u_seq, packs):
         self.packs = packs
 
-        # for _ in trange(self.per_iter, desc='ILQR', leave=False):
-        for _ in range(self.per_iter):
+        for _ in trange(self.per_iter, desc='ILQR', leave=False):
+        # for _ in range(self.per_iter):
             k_seq, kk_seq = self.cal_K(x_seq, u_seq)
 
             if self.model_sim is not None:
