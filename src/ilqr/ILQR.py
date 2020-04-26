@@ -72,9 +72,9 @@ class ILQR:
         k_seq = [None] * self.horizon
         kk_seq = [None] * self.horizon
 
-        # debug_dict = {key: [] for key in
-        #               ['k', 'kk', 'inv_qq', 'lx', 'lu', 'lxx', 'luu', 'lux', 'fx', 'fu', 'vx', 'vxx', 'qx', 'qu',
-        #                'qxx', 'quu', 'qux', 'x', 'u']}
+        debug_dict = {key: [] for key in
+                      ['k', 'kk', 'inv_qq', 'lx', 'lu', 'lxx', 'luu', 'lux', 'fx', 'fu', 'vx', 'vxx', 'qx', 'qu',
+                       'qxx', 'quu', 'qux', 'x', 'u']}
 
         for i in tqdm(range(self.horizon - 2, -1, -1), desc='backward', leave=False):
         # for i in range(self.horizon - 2, -1, -1):
@@ -126,28 +126,28 @@ class ILQR:
             v_x_seq[i] = new_vx
             v_xx_seq[i] = new_vxx
 
-            # Ms = [k, kk, inv_quu, lx, lu, lxx, luu, lux, fx, fu, vx, vxx, q_x, q_u, q_xx, q_uu, q_ux, x, u,
-            #       x_seq[i + 1]]
-            #
-            # if self.DEBUG and np.any([misc.check_val(m) for m in Ms]):
-            #     names = ['k', 'kk', 'inv_qq', 'lx', 'lu', 'lxx', 'luu', 'lux', 'fx', 'fu', 'vx', 'vxx', 'qx', 'qu',
-            #              'qxx',
-            #              'quu', 'qux', 'x', 'u', 'last_x']
-            #
-            #     print(f"\n\n-------------ITER {i}------------------------------")
-            #     for n, m in zip(names, Ms):
-            #         print(f"{n}\n\t{np.max(np.abs(m))}\n")
-            #
-            #     #             print(f"INVQUU:\n\t {inv_quu}")
-            #     #             print(f"QU:\n\t {inv_quu}")
-            #     #             print(f"k:\n\t {k}\n\n\n")
-            #     raise Exception("ILQR Invalid")
-            #
-            # Ms = [k, kk, inv_quu, lx, lu, lxx, luu, lux, fx, fu, vx, vxx, q_x, q_u, q_xx, q_uu, q_ux, x, u]
-            # names = ['k', 'kk', 'inv_qq', 'lx', 'lu', 'lxx', 'luu', 'lux', 'fx', 'fu', 'vx', 'vxx', 'qx', 'qu',
-            #          'qxx', 'quu', 'qux', 'x', 'u']
-            # for n, val in zip(names, Ms):
-            #     debug_dict[n].append(np.array(val).tolist())
+            Ms = [k, kk, inv_quu, lx, lu, lxx, luu, lux, fx, fu, vx, vxx, q_x, q_u, q_xx, q_uu, q_ux, x, u,
+                  x_seq[i + 1]]
+
+            if self.DEBUG and np.any([misc.check_val(m) for m in Ms]):
+                names = ['k', 'kk', 'inv_qq', 'lx', 'lu', 'lxx', 'luu', 'lux', 'fx', 'fu', 'vx', 'vxx', 'qx', 'qu',
+                         'qxx',
+                         'quu', 'qux', 'x', 'u', 'last_x']
+
+                print(f"\n\n-------------ITER {i}------------------------------")
+                for n, m in zip(names, Ms):
+                    print(f"{n}\n\t{np.max(np.abs(m))}\n")
+
+                #             print(f"INVQUU:\n\t {inv_quu}")
+                #             print(f"QU:\n\t {inv_quu}")
+                #             print(f"k:\n\t {k}\n\n\n")
+                raise Exception("ILQR Invalid")
+
+            Ms = [k, kk, inv_quu, lx, lu, lxx, luu, lux, fx, fu, vx, vxx, q_x, q_u, q_xx, q_uu, q_ux, x, u]
+            names = ['k', 'kk', 'inv_qq', 'lx', 'lu', 'lxx', 'luu', 'lux', 'fx', 'fu', 'vx', 'vxx', 'qx', 'qu',
+                     'qxx', 'quu', 'qux', 'x', 'u']
+            for n, val in zip(names, Ms):
+                debug_dict[n].append(np.array(val).tolist())
 
         return k_seq, kk_seq
 
@@ -174,9 +174,9 @@ class ILQR:
                 pack = self.model_sim.get_pack()
                 packs.append(pack)
 
-            # Ms = [new_u, new_x, pack, k_seq[i], kk_seq[i]]
-            # if self.DEBUG and np.any([misc.check_val(m) for m in Ms]):
-            #     print(f"ITER {i}\nU:{new_u}\nX:{new_x}\nPack:{pack}")
+            Ms = [new_u, new_x, pack, k_seq[i], kk_seq[i]]
+            if self.DEBUG and np.any([misc.check_val(m) for m in Ms]):
+                print(f"ITER {i}\nU:{new_u}\nX:{new_x}\nPack:{pack}")
 
             new_u_seq[i] = new_u
             new_x_seq[i + 1] = new_x

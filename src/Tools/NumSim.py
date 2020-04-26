@@ -1,6 +1,7 @@
 from . import misc, ModelDerivator
 import jax.numpy as np
 import jax
+import numpy as onp
 from sapien.core import Pose
 import sapien.core as sapien
 
@@ -116,6 +117,8 @@ class NumForwardDynamicsDer(ModelDerivator):
         self.dof = self.robot.dof
         self.pack = self.robot.pack()
 
+        self.limits = self.robot.get_qlimits().T
+
     def set_pack(self, pack):
         self.pack = pack
 
@@ -123,8 +126,8 @@ class NumForwardDynamicsDer(ModelDerivator):
         """
             0.5*(a2 - a1)t
         """
+        return onp.eye(self.num_x)
 
-        return np.eye(self.num_x)
         # res = []
         #
         # orig_pack = self.robot.pack()
@@ -185,6 +188,7 @@ class NumForwardDynamicsDer(ModelDerivator):
             0.5*(a2 - a1)t
         """
         res = []
+        u = np.clip(u, self.limits[0], self.limits[1])
 
         orig_pack = self.robot.pack()
         orig_u = u.tolist()
@@ -197,6 +201,15 @@ class NumForwardDynamicsDer(ModelDerivator):
 
             a1 = self.robot.compute_forward_dynamics(new_u1)
             a2 = self.robot.compute_forward_dynamics(new_u2)
+
+            # bound check due to u
+            x1 = x + a1 * self.timestep**2 / 2.0
+            x2 = x + a2 * self.timestep**2 / 2.0
+
+            l1 = self.limits[0]
+            l2 = self.limits[1]
+            a1 = np.where((x1 >= l1) * (x1 <= l2), a1, np.zeros_like(a1))
+            a2 = np.where((x2 >= l1) * (x2 <= l2), a2, np.zeros_like(a2))
 
             res.append(a2 - a1)
 

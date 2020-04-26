@@ -347,3 +347,19 @@ class DerivativeFactory(ModelDerivator):
         res = np.array(res).T
 
         return res
+
+class ModelSim:
+    def __init__(self, create_scene, timestep):
+        self.scene, self.robot = create_scene(timestep, False)
+
+    def set(self, pack):
+        self.robot.unpack(pack)
+
+    def sim(self, u):
+        self.robot.set_qf(u)
+        self.scene.step()
+
+        return misc.get_state(self.robot)
+
+    def get_pack(self):
+        return self.robot.pack()
