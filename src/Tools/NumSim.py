@@ -1,6 +1,7 @@
 from . import misc, ModelDerivator
 import jax.numpy as np
 import jax
+from jax import jacfwd, jacrev, grad
 import numpy as onp
 from sapien.core import Pose
 import sapien.core as sapien
@@ -106,9 +107,97 @@ class ForwardKinematics:
             return np.array(list(res.values()))
 
 
-class NumForwardDynamicsDer(ModelDerivator):
+class Dynamics:
+    def __init__(self, robot: sapien.Articulation, timestep: float, gravity: bool = True,
+                 coriolisAndCentrifugal: bool = True, external: bool = True):
+        self.robot = robot
+        self.timestep = timestep
+        self.gravity = gravity
+        self.coriolisAndCentrifugal = coriolisAndCentrifugal
+        self.external = external
+        self.pack = self.robot.pack()
 
+    def set_pack(self, pack):
+        self.pack = pack
+
+    @jax.partial(jax.jit, static_argnums=(0,))
+    def forward(self, u: np.ndarray):
+        """
+                compute forward dynamics
+                u: the force on genralised coordinate
+                timestep: [optional] simulation timestep
+
+                return the change in qpos purely due to u
+        """
+        orig_pack = self.robot.pack()
+        self.robot.unpack(self.pack)
+        # self.robot.set_qf(u)
+        other_force = self.robot.compute_passive_force(self.gravity, self.coriolisAndCentrifugal, self.external)
+        self.robot.unpack(orig_pack)
+
+        f = u - other_force
+
+        mass = self.robot.compute_mass_matrix()
+        inv_mass = np.linalg.inv(mass)
+
+        qacc = inv_mass @ f
+
+        # stupid delta update
+        return 0.5 * qacc * self.timestep ** 2
+
+    @jax.partial(jax.jit, static_argnums=(0,))
+    def forward_deri(self, u: np.ndarray, eps=1e-3):
+        orig_pack = self.robot.pack()
+        self.robot.unpack(self.pack)
+        # print(u.tolist())
+        # self.robot.set_qf(u.tolist())
+        mass = self.robot.compute_mass_matrix()
+        self.robot.unpack(orig_pack)
+        inv_mass = np.linalg.inv(mass)
+
+        return 0.5 * inv_mass.T * self.timestep ** 2
+
+
+    @jax.partial(jax.jit, static_argnums=(0,))
+    def inverse(self, qAcc):
+        # linear
+        linear_force = self.mass @ qAcc
+
+        # other
+        orig_pack = self.robot.pack()
+        self.robot.unpack(self.pack)
+        F = self.robot.compute_passive_force(self.gravity, self.coriolisAndCentrifugal, self.external)
+        self.robot.unpack(orig_pack)
+
+        return linear_force + F
+
+
+class MathForwardDynamicsDer(ModelDerivator):
+
+    def __init__(self, robot: sapien.Articulation, timestep: float, gravity: bool = True,
+                 coriolisAndCentrifugal: bool = True, external: bool = True):
+        super()
+        self.dym = Dynamics(robot, timestep, gravity, coriolisAndCentrifugal, external)
+        self.dym_fu = jacfwd(self.dym.forward)
+        self.robot = robot
+        self.pack = robot.pack()
+        self.num_x = self.robot.dof
+        self.num_u = len(misc.get_state(robot))
+
+    def set_pack(self, pack):
+        self.pack = pack
+        self.dym.set_pack(pack)
+
+    def fu(self, u: np.array, x: np.array, eps=None) -> np.array:
+        return self.dym_fu(u)
+
+    def fx(self, u: np.array, x: np.array, eps=None) -> np.array:
+        return onp.eye(self.num_x)
+
+
+class NumForwardDynamicsDer(ModelDerivator):
     def __init__(self, robot: sapien.Articulation, timestep: float, def_eps=1e-3, include_external=False):
+        super()
         self.robot = robot
         self.timestep = timestep
         self.def_eps = def_eps
@@ -203,8 +292,8 @@ class NumForwardDynamicsDer(ModelDerivator):
             a2 = self.robot.compute_forward_dynamics(new_u2)
 
             # bound check due to u
-            x1 = x + a1 * self.timestep**2 / 2.0
-            x2 = x + a2 * self.timestep**2 / 2.0
+            x1 = x + a1 * self.timestep ** 2 / 2.0
+            x2 = x + a2 * self.timestep ** 2 / 2.0
 
             l1 = self.limits[0]
             l2 = self.limits[1]

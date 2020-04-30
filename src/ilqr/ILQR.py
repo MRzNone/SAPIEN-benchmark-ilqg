@@ -72,9 +72,10 @@ class ILQR:
         k_seq = [None] * self.horizon
         kk_seq = [None] * self.horizon
 
-        debug_dict = {key: [] for key in
-                      ['k', 'kk', 'inv_qq', 'lx', 'lu', 'lxx', 'luu', 'lux', 'fx', 'fu', 'vx', 'vxx', 'qx', 'qu',
-                       'qxx', 'quu', 'qux', 'x', 'u']}
+        if self.DEBUG:
+            debug_dict = {key: [] for key in
+                          ['k', 'kk', 'inv_qq', 'lx', 'lu', 'lxx', 'luu', 'lux', 'fx', 'fu', 'vx', 'vxx', 'qx', 'qu',
+                           'qxx', 'quu', 'qux', 'x', 'u']}
 
         for i in tqdm(range(self.horizon - 2, -1, -1), desc='backward', leave=False):
         # for i in range(self.horizon - 2, -1, -1):
@@ -143,11 +144,12 @@ class ILQR:
                 #             print(f"k:\n\t {k}\n\n\n")
                 raise Exception("ILQR Invalid")
 
-            Ms = [k, kk, inv_quu, lx, lu, lxx, luu, lux, fx, fu, vx, vxx, q_x, q_u, q_xx, q_uu, q_ux, x, u]
-            names = ['k', 'kk', 'inv_qq', 'lx', 'lu', 'lxx', 'luu', 'lux', 'fx', 'fu', 'vx', 'vxx', 'qx', 'qu',
-                     'qxx', 'quu', 'qux', 'x', 'u']
-            for n, val in zip(names, Ms):
-                debug_dict[n].append(np.array(val).tolist())
+            if self.DEBUG:
+                Ms = [k, kk, inv_quu, lx, lu, lxx, luu, lux, fx, fu, vx, vxx, q_x, q_u, q_xx, q_uu, q_ux, x, u]
+                names = ['k', 'kk', 'inv_qq', 'lx', 'lu', 'lxx', 'luu', 'lux', 'fx', 'fu', 'vx', 'vxx', 'qx', 'qu',
+                         'qxx', 'quu', 'qux', 'x', 'u']
+                for n, val in zip(names, Ms):
+                    debug_dict[n].append(np.array(val).tolist())
 
         return k_seq, kk_seq
 
@@ -191,7 +193,6 @@ class ILQR:
         self.packs = packs
 
         for _ in trange(self.per_iter, desc='ILQR', leave=False):
-        # for _ in range(self.per_iter):
             k_seq, kk_seq = self.cal_K(x_seq, u_seq)
 
             if self.model_sim is not None:
