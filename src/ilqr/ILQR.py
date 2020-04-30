@@ -1,6 +1,7 @@
 import jax.numpy as np
 from jax import jit, jacfwd, jacrev, grad
-from tqdm.notebook import tqdm, trange
+from tqdm import tqdm, trange
+# from tqdm.notebook import tqdm, trange
 
 from Tools import SimWorker, misc, ModelDerivator
 

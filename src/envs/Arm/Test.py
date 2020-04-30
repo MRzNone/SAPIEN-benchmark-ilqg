@@ -7,7 +7,8 @@ import jax.numpy as np
 from jax import jit, jacfwd, jacrev, grad
 from ilqr import ILQR
 from datetime import datetime
-from tqdm.notebook import trange
+from tqdm import trange
+# from tqdm.notebook import trange
 import matplotlib.pyplot as plt
 
 sim = sapien.Engine()
@@ -17,7 +18,7 @@ render_controller = sapien.OptifuserController(renderer)
 
 #%%
 
-DEBUG = False
+DEBUG = True
 
 stabled = False
 
@@ -91,22 +92,26 @@ per_iter = 2
 
 
 @jit
-def final_cost(x, alpha=0.3):
+def final_cost(x, alpha1=0.3, alpha2=0.5):
     # add base pose
-    x = np.concatenate((x, robo_pose.p, robo_pose.q))
+    qpos = x[:dof]
+    qvel = x[dof:]
+    pos = np.concatenate((qpos, robo_pose.p, robo_pose.q))
 
-    cart_pos = fk.fk(x).reshape(-1, 3)[:, :3]
+    cart_pos = fk.fk(pos).reshape(-1, 3)[:, :3]
     end_effector_pos = cart_pos[-3]
 
     target_pos = robo_pose.p + [0, 0, 1.2]
-    term1 = smooth_abs(end_effector_pos[2] - target_pos[2], alpha)
+    term1 = smooth_abs(end_effector_pos[2] - target_pos[2], alpha1)
 
-    return term1 * 5
+    term2 = smooth_abs(qvel/50, alpha2)
+
+    return term1 * 5 + term2
 
 
 @jit
 def running_cost(x, u, alpha=0.3):
-    term1 = smooth_abs(u / factor, alpha) / horizon
+    term1 = smooth_abs(u / factor, alpha) / horizon * 5
     return term1
 
 

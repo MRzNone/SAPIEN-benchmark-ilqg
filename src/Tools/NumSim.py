@@ -142,24 +142,18 @@ class Dynamics:
 
         qacc = inv_mass @ f
 
+        delta_qpos = 0.5 * qacc * self.timestep ** 2
+        delta_qvel = qacc * self.timestep
+
         # stupid delta update
-        return 0.5 * qacc * self.timestep ** 2
+        return np.concatenate((delta_qpos, delta_qvel))
 
     @jax.partial(jax.jit, static_argnums=(0,))
-    def forward_deri(self, u: np.ndarray, eps=1e-3):
-        orig_pack = self.robot.pack()
-        self.robot.unpack(self.pack)
-        # print(u.tolist())
-        # self.robot.set_qf(u.tolist())
-        mass = self.robot.compute_mass_matrix()
-        self.robot.unpack(orig_pack)
-        inv_mass = np.linalg.inv(mass)
-
-        return 0.5 * inv_mass.T * self.timestep ** 2
-
-
-    @jax.partial(jax.jit, static_argnums=(0,))
-    def inverse(self, qAcc):
+    def inverse(self, x):
+        """
+            force from acceleration(state)
+        """
+        qAcc = x[:self.robot.dof]
         # linear
         linear_force = self.mass @ qAcc
 
@@ -181,7 +175,7 @@ class MathForwardDynamicsDer(ModelDerivator):
         self.dym_fu = jacfwd(self.dym.forward)
         self.robot = robot
         self.pack = robot.pack()
-        self.num_x = self.robot.dof
+        self.num_x = len(misc.get_state(self.robot))
         self.num_u = len(misc.get_state(robot))
 
     def set_pack(self, pack):

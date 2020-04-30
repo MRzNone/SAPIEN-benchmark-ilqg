@@ -128,7 +128,7 @@ def get_state(robot:sapien.Articulation):
     '''
     # ant_pos = robot.get_pose()
     # return np.concatenate((robot.get_qpos(), ant_pos.p, ant_pos.q))
-    return onp.array(robot.get_qpos())
+    return onp.concatenate((robot.get_qpos(), robot.get_qvel()))
 
 def inbound(x, l1, l2):
     return np.alltrue(x > l1) and onp.alltrue(x < l2)
