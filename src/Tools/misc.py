@@ -221,7 +221,7 @@ def decompose(m):
     return np.concatenate((p, q))
 
 def check_val(x):
-    return not onp.alltrue(onp.isfinite(x))
+    return not np.alltrue(np.isfinite(x))
 
 def decompose_pos_only(m):
     """

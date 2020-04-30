@@ -1,6 +1,7 @@
 import sapien.core as sapien
 from sapien.core import Pose
 import jax.numpy as np
+import jax
 import numpy as onp
 import time
 from multiprocessing import Queue, Process, Array, Value

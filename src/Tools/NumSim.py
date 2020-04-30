@@ -72,6 +72,7 @@ class ForwardKinematics:
 
             parentInfo.add_child(joint_dict[j.get_child_link()])
 
+    # @jax.partial(jax.jit, static_argnums=(0, 2))
     def fk_recurse(self, pMat, joint: JointInfo, qPos: list, res: dict):
         # get theta
         theta = 0.0
@@ -115,10 +116,13 @@ class Dynamics:
         self.gravity = gravity
         self.coriolisAndCentrifugal = coriolisAndCentrifugal
         self.external = external
-        self.pack = self.robot.pack()
+
+        with jax.disable_jit():
+            self.pack = self.robot.pack()
 
     def set_pack(self, pack):
-        self.pack = pack
+        with jax.disable_jit():
+            self.pack = pack
 
     @jax.partial(jax.jit, static_argnums=(0,))
     def forward(self, u: np.ndarray):
@@ -130,7 +134,8 @@ class Dynamics:
                 return the change in qpos purely due to u
         """
         orig_pack = self.robot.pack()
-        self.robot.unpack(self.pack)
+        with jax.disable_jit():
+            self.robot.unpack(self.pack)
         # self.robot.set_qf(u)
         other_force = self.robot.compute_passive_force(self.gravity, self.coriolisAndCentrifugal, self.external)
         self.robot.unpack(orig_pack)
@@ -179,12 +184,15 @@ class MathForwardDynamicsDer(ModelDerivator):
         self.num_u = len(misc.get_state(robot))
 
     def set_pack(self, pack):
-        self.pack = pack
-        self.dym.set_pack(pack)
+        with jax.disable_jit():
+            self.pack = pack
+            self.dym.set_pack(pack)
 
+    @jax.partial(jax.jit, static_argnums=(0,))
     def fu(self, u: np.array, x: np.array, eps=None) -> np.array:
         return self.dym_fu(u)
 
+    @jax.partial(jax.jit, static_argnums=(0,))
     def fx(self, u: np.array, x: np.array, eps=None) -> np.array:
         return onp.eye(self.num_x)
 
