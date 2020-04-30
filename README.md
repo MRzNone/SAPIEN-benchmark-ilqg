@@ -37,5 +37,6 @@ ANT
     - Writing my own forward kinematics.  f: q -> x (local cartesian coord respect to robot base)
   - derivatives are exploding as I have very inaccurate fu, fx. Error propagates very quickly
     - Might be able to do derive derivative in generalised coordinate from cartesian coord?  Since linear ops
+ARM
   - Simple Lagrangian forward dynamics can be fast and accurate-ish, does not know performance in friction environment
   - Make simulation timestep small for optimization.  It helps (like a lot).
