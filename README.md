@@ -4,7 +4,6 @@ A benchmark for [Synthesis and Stabilization of Complex Behaviors through Online
 
 # TODO
 - Implement in a toy env (gym) :heavy_check_mark:
-- Setup (cartpole) environment in SAPIEN
   - able to dummy simulate :heavy_check_mark:
   - set up workflow :heavy_check_mark:
   - wrap control for ease of use :heavy_check_mark:
