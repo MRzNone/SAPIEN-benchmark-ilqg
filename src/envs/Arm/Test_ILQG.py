@@ -108,7 +108,7 @@ def final_cost(x, alpha1=0.2, alpha2=0.5, alpha3=0.5):
     cart_pos = fk.fk(pos).reshape(-1, 3)[:, :3]
     end_effector_pos = cart_pos[-3]
 
-    target_pos = robo_pose.p + [0, 0, 1.2]
+    target_pos = robo_pose.p + [0, 0, 1.5]
     # target_pos = robo_pose.p + [0.5, 0.5, 0]
     diff = target_pos[2] - end_effector_pos[2]
     term1 = smooth_abs(diff, alpha1)

@@ -171,6 +171,7 @@ class ILQG:
 
         if self.packs is not None:
             packs = [self.packs[0]]
+            self.model_sim.set(self.packs[0])
         else:
             packs = None
 
@@ -246,7 +247,7 @@ class ILQG:
     def compute_derivatives(self, x_seq, u_seq):
         derivs = []
         for x, u, pack in zip(x_seq, u_seq, self.packs):
-            self.model_sim.set(pack)
+            self.model_der.set_pack(pack)
             derivs.append(self.compute_der(x, u))
         return derivs
 
