@@ -6,13 +6,13 @@ class ModelDerivator:
     def set_pack(self, pack):
         raise NotImplementedError
 
-    def fu(self, u: np.array, x: np.array, eps: float = 1e-3) -> np.array:
+    def fu(self, x: np.array, u: np.array, eps: float = 1e-3) -> np.array:
         """
             derivative respect to u
         """
         raise NotImplementedError
 
-    def fx(self, u: np.array, x: np.array, eps: float = 1e-3) -> np.array:
+    def fx(self, x: np.array, u: np.array, eps: float = 1e-3) -> np.array:
         """
             derivative respect to x
         """

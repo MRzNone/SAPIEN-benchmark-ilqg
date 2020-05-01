@@ -112,6 +112,7 @@ class Dynamics:
     def __init__(self, robot: sapien.Articulation, timestep: float, gravity: bool = True,
                  coriolisAndCentrifugal: bool = True, external: bool = True):
         self.robot = robot
+        self.dof = self.robot.dof
         self.timestep = timestep
         self.gravity = gravity
         self.coriolisAndCentrifugal = coriolisAndCentrifugal
@@ -121,11 +122,10 @@ class Dynamics:
             self.pack = self.robot.pack()
 
     def set_pack(self, pack):
-        with jax.disable_jit():
-            self.pack = pack
+        self.pack = pack
 
     @jax.partial(jax.jit, static_argnums=(0,))
-    def forward(self, u: np.ndarray):
+    def forward(self, x, u: np.ndarray):
         """
                 compute forward dynamics
                 u: the force on genralised coordinate
@@ -133,12 +133,11 @@ class Dynamics:
 
                 return the change in qpos purely due to u
         """
-        orig_pack = self.robot.pack()
-        with jax.disable_jit():
-            self.robot.unpack(self.pack)
-        # self.robot.set_qf(u)
+        self.robot.unpack(self.pack)
         other_force = self.robot.compute_passive_force(self.gravity, self.coriolisAndCentrifugal, self.external)
-        self.robot.unpack(orig_pack)
+
+        qpos = x[:self.dof]
+        qvel = x[self.dof:]
 
         f = u - other_force
 
@@ -147,11 +146,25 @@ class Dynamics:
 
         qacc = inv_mass @ f
 
-        delta_qpos = 0.5 * qacc * self.timestep ** 2
         delta_qvel = qacc * self.timestep
+        delta_qpos = delta_qvel * self.timestep
+
+        new_qpos = qpos + delta_qpos
+        new_qvel = qvel + delta_qvel
 
         # stupid delta update
-        return np.concatenate((delta_qpos, delta_qvel))
+        return np.concatenate((new_qpos, new_qvel))
+
+    @jax.partial(jax.jit, static_argnums=(0,))
+    def stupid_forward_deri_u(self, u, x):
+        mass = self.robot.compute_mass_matrix()
+        inv_mass = np.linalg.inv(mass)
+
+        dpdu = inv_mass.T * self.timestep ** 2
+        dvdu = inv_mass.T * self.timestep
+
+        return np.vstack((dpdu, dvdu))
+
 
     @jax.partial(jax.jit, static_argnums=(0,))
     def inverse(self, x):
@@ -163,37 +176,38 @@ class Dynamics:
         linear_force = self.mass @ qAcc
 
         # other
-        orig_pack = self.robot.pack()
         self.robot.unpack(self.pack)
         F = self.robot.compute_passive_force(self.gravity, self.coriolisAndCentrifugal, self.external)
-        self.robot.unpack(orig_pack)
 
         return linear_force + F
 
 
-class MathForwardDynamicsDer(ModelDerivator):
+class MathForwardDynamics(ModelDerivator):
 
-    def __init__(self, robot: sapien.Articulation, timestep: float, gravity: bool = True,
+    def __init__(self, create_scene, timestep: float, pack, gravity: bool = True,
                  coriolisAndCentrifugal: bool = True, external: bool = True):
         super()
-        self.dym = Dynamics(robot, timestep, gravity, coriolisAndCentrifugal, external)
-        self.dym_fu = jacfwd(self.dym.forward)
-        self.robot = robot
-        self.pack = robot.pack()
+        self.scene, self.robot = create_scene(timestep, False)
+        self.dym = Dynamics(self.robot, timestep, gravity, coriolisAndCentrifugal, external)
+        self.dym_fu = jacfwd(self.dym.forward, 1)
+        self.robot = self.robot
         self.num_x = len(misc.get_state(self.robot))
-        self.num_u = len(misc.get_state(robot))
+        self.set_pack(pack)
 
     def set_pack(self, pack):
         with jax.disable_jit():
             self.pack = pack
             self.dym.set_pack(pack)
 
-    @jax.partial(jax.jit, static_argnums=(0,))
-    def fu(self, u: np.array, x: np.array, eps=None) -> np.array:
-        return self.dym_fu(u)
+    def f(self, x: np.array, u: np.array):
+        return self.dym.forward(x, u)
 
     @jax.partial(jax.jit, static_argnums=(0,))
-    def fx(self, u: np.array, x: np.array, eps=None) -> np.array:
+    def fu(self, x: np.array, u: np.array, eps=None) -> np.array:
+        return self.dym_fu(x, u)
+
+    @jax.partial(jax.jit, static_argnums=(0,))
+    def fx(self, x: np.array, u: np.array, eps=None) -> np.array:
         return onp.eye(self.num_x)
 
 
@@ -213,7 +227,7 @@ class NumForwardDynamicsDer(ModelDerivator):
     def set_pack(self, pack):
         self.pack = pack
 
-    def fx(self, u: np.array, x: np.array, eps: float = 1e-3) -> np.array:
+    def fx(self, x: np.array, u: np.array, eps: float = 1e-3) -> np.array:
         """
             0.5*(a2 - a1)t
         """
@@ -274,7 +288,7 @@ class NumForwardDynamicsDer(ModelDerivator):
         #
         # return np.array(res).T * self.timestep / 2.0
 
-    def fu(self, u: np.array, x: np.array, eps: float = 1e-3) -> np.array:
+    def fu(self, x: np.array, u: np.array, eps: float = 1e-3) -> np.array:
         """
             0.5*(a2 - a1)t
         """

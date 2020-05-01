@@ -6,6 +6,7 @@ import sapien.core as sapien
 links_cache = {}
 joints_cache = {}
 
+
 def get_links(robot, sig_mass=-1):
     '''
         Return all the link that have significant mass for the robot
@@ -121,7 +122,11 @@ def get_joint_state(robot):
     return np.array(state)
 
 
-def get_state(robot:sapien.Articulation):
+def is_PD(m):
+    return onp.alltrue(onp.linalg.eigvals(m) > 0)
+
+
+def get_state(robot: sapien.Articulation):
     '''
         dof + 3 + 4
         [qpos(8), pos(3), quat(4)]
@@ -130,8 +135,10 @@ def get_state(robot:sapien.Articulation):
     # return np.concatenate((robot.get_qpos(), ant_pos.p, ant_pos.q))
     return onp.concatenate((robot.get_qpos(), robot.get_qvel()))
 
+
 def inbound(x, l1, l2):
     return np.alltrue(x > l1) and onp.alltrue(x < l2)
+
 
 def compose_p(pose):
     '''
@@ -192,23 +199,33 @@ def m_mat2quat(M):
     #         q *= -1
     return q * q[0] / np.abs(q[0])
 
+
 def m_axangle2mat(axis, angle):
     '''
         Borrowed from transform3d
     '''
     x, y, z = axis
-    n = np.sqrt(x*x + y*y + z*z)
-    x = x/n
-    y = y/n
-    z = z/n
-    c = np.cos(angle); s = np.sin(angle); C = 1-c
-    xs = x*s;   ys = y*s;   zs = z*s
-    xC = x*C;   yC = y*C;   zC = z*C
-    xyC = x*yC; yzC = y*zC; zxC = z*xC
+    n = np.sqrt(x * x + y * y + z * z)
+    x = x / n
+    y = y / n
+    z = z / n
+    c = np.cos(angle);
+    s = np.sin(angle);
+    C = 1 - c
+    xs = x * s;
+    ys = y * s;
+    zs = z * s
+    xC = x * C;
+    yC = y * C;
+    zC = z * C
+    xyC = x * yC;
+    yzC = y * zC;
+    zxC = z * xC
     return np.array([
-            [ x*xC+c,   xyC-zs,   zxC+ys ],
-            [ xyC+zs,   y*yC+c,   yzC-xs ],
-            [ zxC-ys,   yzC+xs,   z*zC+c ]])
+        [x * xC + c, xyC - zs, zxC + ys],
+        [xyC + zs, y * yC + c, yzC - xs],
+        [zxC - ys, yzC + xs, z * zC + c]])
+
 
 def decompose(m):
     '''
@@ -220,8 +237,10 @@ def decompose(m):
 
     return np.concatenate((p, q))
 
+
 def check_val(x):
     return not np.alltrue(np.isfinite(x))
+
 
 def decompose_pos_only(m):
     """
@@ -231,6 +250,7 @@ def decompose_pos_only(m):
     #     q = quat.mat2quat(m[:3,:3])
 
     return p
+
 
 def compose(p, q):
     '''
