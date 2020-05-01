@@ -20,8 +20,6 @@ render_controller = sapien.OptifuserController(renderer)
 
 DEBUG = False
 
-stabled = False
-
 
 def create_scene(timestep, visual):
     s = sim.create_scene([0, 0, 0])
@@ -72,7 +70,8 @@ render_controller.set_current_scene(s0)
 
 # %%
 
-deri = MathForwardDynamicsDer(robot, optim_timestep, False, False, False)
+# _, robot2 = create_scene(optim_timestep, False)
+deri = MathForwardDynamicsDer(create_scene, optim_timestep, robot.pack(), False, False, False)
 # deri = NumForwardDynamicsDer(robot, sim_timestep)
 fk = ForwardKinematics(robot)
 sim_worker = ModelSim(create_scene, optim_timestep)
