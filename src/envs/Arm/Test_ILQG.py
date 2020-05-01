@@ -121,7 +121,7 @@ def final_cost(x, alpha1=0.2, alpha2=0.5, alpha3=0.5):
 
 @jit
 def running_cost(x, u, alpha=0.7):
-    term1 = smooth_abs(u / factor, alpha)
+    term1 = smooth_abs(u / factor, alpha) / horizon
     return term1
 
 

@@ -94,7 +94,6 @@ class ILQG:
 
         return k, kk, new_vx, new_vxx
 
-    @jax.partial(jax.jit, static_argnums=(0,))
     def increase_val(self, val, factor, scale):
         factor = max(scale, scale * factor)
         val = max(self.mu_min, val * factor)
@@ -140,11 +139,11 @@ class ILQG:
                 # cal Ks
                 k, kk, new_vx, new_vxx = self.cal_Ks(q_x, q_u, q_xx, q_uu, q_ux)
 
-                for m, name in zip([q_x, q_u, q_xx, q_uu, q_ux, k, kk, new_vx, new_vxx],
-                                   ["q_x", "q_u", "q_xx", "q_uu", "q_ux", "k", "kk", "new_vx", "new_vxx"]):
-                    if misc.check_val(m):
-                        print(name)
-                        raise RuntimeError("fasdds")
+                # for m, name in zip([q_x, q_u, q_xx, q_uu, q_ux, k, kk, new_vx, new_vxx],
+                #                    ["q_x", "q_u", "q_xx", "q_uu", "q_ux", "k", "kk", "new_vx", "new_vxx"]):
+                #     if misc.check_val(m):
+                #         print(name)
+                #         raise RuntimeError("fasdds")
 
                 # record
                 k_seq[i] = k
@@ -203,6 +202,8 @@ class ILQG:
         for x, u in zip(x_seq[:-1], u_seq[:-1]):
             total_cost += self.l(x, u)
 
+        total_cost += self.v(x_seq[-1])
+
         return total_cost
 
     def forward(self, x_seq, u_seq, k_seq, kk_seq, j1, j2, last_cost):
@@ -222,8 +223,8 @@ class ILQG:
             z = (last_cost - new_cost) / dj
 
             # check if safe
+            a = a / self.a0
             if z < 0:
-                a = a / self.a0
                 accept = True
 
         if not accept:
