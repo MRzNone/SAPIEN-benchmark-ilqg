@@ -8,6 +8,7 @@ from jax import jit, jacfwd, jacrev, grad
 from ilq import ILQG
 import timeit
 import os
+import matplotlib.pyplot as plt
 
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.4"
 
@@ -94,7 +95,7 @@ q_radius = q_range[1] - q_mean
 
 pred_time = 0.4
 horizon = int(pred_time / optim_timestep) + 1
-per_iter = 2
+per_iter = 1
 
 
 @jit
@@ -107,9 +108,9 @@ def final_cost(x, alpha1=0.2, alpha2=0.5, alpha3=0.5):
     cart_pos = fk.fk(pos).reshape(-1, 3)[:, :3]
     end_effector_pos = cart_pos[-3]
 
-    # target_pos = robo_pose.p + [0, 0, 1.2]
-    target_pos = robo_pose.p + [0.5, 0.5, 0]
-    diff = target_pos - end_effector_pos
+    target_pos = robo_pose.p + [0, 0, 1.2]
+    # target_pos = robo_pose.p + [0.5, 0.5, 0]
+    diff = target_pos[2] - end_effector_pos[2]
     term1 = smooth_abs(diff, alpha1)
 
     # penalize high velocity
@@ -119,8 +120,8 @@ def final_cost(x, alpha1=0.2, alpha2=0.5, alpha3=0.5):
 
 
 @jit
-def running_cost(x, u, alpha=0.3):
-    term1 = smooth_abs(u / factor, alpha) / horizon
+def running_cost(x, u, alpha=0.7):
+    term1 = smooth_abs(u / factor, alpha)
     return term1
 
 
@@ -164,6 +165,32 @@ def prep():
 
 x_seq, u_seq, pack_seq = prep()
 
+IF_RECORD = False
+IF_PLOT = True
+
+if IF_RECORD:
+    # records
+    ctrl_record = []
+    x_record = []
+    u_record = []
+    ini_state = [robot.pack()]
+
+if IF_RECORD or IF_PLOT:
+    run_cost_record = []
+    f_cost_record = []
+
+if IF_PLOT:
+    fig, axs = plt.subplots(3, figsize=(12, 9))
+
+    total = []
+    f_ax, r_ax, t_ax = axs
+    PLOT_LEN = 30
+
+    plt.ion()
+
+    fig.show()
+    fig.canvas.draw()
+
 last_cost = 0
 
 render_controller.show_window()
@@ -182,3 +209,53 @@ for i in range(2000):
 
     new_x = misc.get_state(robot)
     new_pack = robot.pack()
+
+    if IF_RECORD or IF_PLOT:
+        f_cost = final_cost(x_seq[-1])
+        run_cost = onp.sum([running_cost(x, u) for x, u in zip(x_seq[:-1], u_seq[:-1])])
+        cost = f_cost + run_cost
+
+    if IF_RECORD:
+        # record
+        ctrl_record.append(u)
+        x_record.append(x_seq)
+        u_record.append(u_seq)
+
+    if IF_RECORD or IF_PLOT:
+        f_cost_record.append(f_cost)
+        run_cost_record.append(run_cost)
+
+    # update x and u here, since we need to record old x u
+    x_seq[0] = new_x
+    pack_seq[0] = new_pack
+
+    # plot
+    if IF_PLOT:
+        total.append(cost)
+        f_ax.clear()
+        r_ax.clear()
+        t_ax.clear()
+
+        y_lim = np.max(total[-PLOT_LEN:]) * 1.2
+        f_ax.set_ylim(0, y_lim)
+        r_ax.set_ylim(0, y_lim)
+        t_ax.set_ylim(0, y_lim)
+
+        x_lim = max(0, i - PLOT_LEN) - 1
+        f_ax.set_xlim(x_lim, i)
+        r_ax.set_xlim(x_lim, i)
+        t_ax.set_xlim(x_lim, i)
+
+        f_ax.plot(f_cost_record)
+        f_ax.set_title("Final")
+        r_ax.plot(run_cost_record)
+        r_ax.set_title("Running")
+
+        t_ax.plot(total, label="Total")
+        t_ax.plot(f_cost_record, label="Final")
+        t_ax.plot(run_cost_record, label="Running")
+        t_ax.legend()
+        t_ax.set_title("Total")
+
+        fig.canvas.draw()
+        fig.show()

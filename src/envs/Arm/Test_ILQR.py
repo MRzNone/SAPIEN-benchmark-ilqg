@@ -108,7 +108,7 @@ def final_cost(x, alpha1=0.2, alpha2=0.5, alpha3=0.5):
 
     target_pos = robo_pose.p + [0, 0, 1.2]
     # target_pos = robo_pose.p + [0.5, 0.5, 0]
-    diff = target_pos - end_effector_pos
+    diff = target_pos[2] - end_effector_pos[2]
     term1 = smooth_abs(diff, alpha1)
 
     # penalize high velocity
@@ -118,8 +118,8 @@ def final_cost(x, alpha1=0.2, alpha2=0.5, alpha3=0.5):
 
 
 @jit
-def running_cost(x, u, alpha=0.3):
-    term1 = smooth_abs(u / factor, alpha) / horizon
+def running_cost(x, u, alpha=0.7):
+    term1 = smooth_abs(u / factor, alpha)
     return term1
 
 
