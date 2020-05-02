@@ -44,9 +44,8 @@ class JointInfo:
 
 class ForwardKinematics:
     def __init__(self, robot: sapien.Articulation):
-        self.jointTree = {}
-
         joint_dict = {}
+        self.names = []
         self.root = None
         # build
         qId = 0
@@ -58,6 +57,7 @@ class ForwardKinematics:
             if j.get_dof() != 0:
                 info.qId = qId
                 qId += 1
+                self.names.append(j.get_name())
 
             joint_dict[j.get_child_link()] = info
             if self.root is None:
@@ -105,7 +105,10 @@ class ForwardKinematics:
         if ifDict:
             return res
         else:
-            return np.array(list(res.values()))
+            arr = []
+            for name in self.names:
+                arr.append(res[name])
+            return np.array(arr)
 
 
 class Dynamics:

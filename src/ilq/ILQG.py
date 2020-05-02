@@ -141,11 +141,11 @@ class ILQG:
                 # cal Ks
                 k, kk, new_vx, new_vxx = self.cal_Ks(q_x, q_u, q_xx, q_uu, q_ux)
 
-                for m, name in zip([q_x, q_u, q_xx, q_uu, q_ux, k, kk, new_vx, new_vxx],
-                                   ["q_x", "q_u", "q_xx", "q_uu", "q_ux", "k", "kk", "new_vx", "new_vxx"]):
-                    if misc.check_val(m):
-                        print(name)
-                        raise RuntimeError("fasdds")
+                # for m, name in zip([q_x, q_u, q_xx, q_uu, q_ux, k, kk, new_vx, new_vxx],
+                #                    ["q_x", "q_u", "q_xx", "q_uu", "q_ux", "k", "kk", "new_vx", "new_vxx"]):
+                #     if misc.check_val(m):
+                #         print(name)
+                #         raise RuntimeError("fasdds")
 
                 if k is None or kk is None:
                     mu, d = self.increase_val(mu, d, self.d0)
