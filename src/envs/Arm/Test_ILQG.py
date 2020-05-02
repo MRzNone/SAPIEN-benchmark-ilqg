@@ -11,6 +11,8 @@ import os
 import matplotlib.pyplot as plt
 
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.4"
+os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=false "
+                           "intra_op_parallelism_threads=12")
 
 sim = sapien.Engine()
 renderer = sapien.OptifuserRenderer()
@@ -51,7 +53,8 @@ def create_scene(timestep, visual):
 # renderer_timestep = 1 / 60
 optim_timestep = 1 / 500
 sim_timestep = 1 / 60
-s0, robot = create_scene(sim_timestep, True)
+render_steps = int(sim_timestep / optim_timestep) + 1
+s0, robot = create_scene(optim_timestep, True)
 
 render_controller.set_camera_position(-5, 0, 0)
 render_controller.set_current_scene(s0)
@@ -121,7 +124,7 @@ def final_cost(x, alpha1=0.2, alpha2=0.5, alpha3=0.5):
 
 @jit
 def running_cost(x, u, alpha=0.7):
-    term1 = smooth_abs(u / factor, alpha) / horizon
+    term1 = smooth_abs(u / factor, alpha) / horizon * 5
     return term1
 
 
@@ -205,7 +208,8 @@ for i in range(2000):
     u = u_seq[0]
 
     robot.set_qf(u + robot.compute_passive_force())
-    s0.step()
+    for _ in range(render_steps):
+        s0.step()
 
     new_x = misc.get_state(robot)
     new_pack = robot.pack()

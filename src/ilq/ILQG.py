@@ -25,6 +25,7 @@ class ILQG:
         self.d0 = d0
         self.a0 = a0
         self.num_x = None
+        self.num_u = None
 
         if model_sim is None:
             self.f = model
@@ -73,7 +74,7 @@ class ILQG:
 
         q_x = lx + fx.T @ vx
         q_u = lu + fu.T @ vx
-        q_xx = lxx + fx.T @ vxx @ fx
+        q_xx = lxx + fx.T @ adjusted_vxx @ fx
         q_uu = luu + fu.T @ adjusted_vxx @ fu
         q_ux = lux + fu.T @ adjusted_vxx @ fx
 
@@ -115,6 +116,7 @@ class ILQG:
         orig_v_x = self.v_x(last_x)
         orig_v_xx = self.v_xx(last_x)
         accept = False
+        valid_pair = None
 
         for _ in range(self.max_loops):
             k_seq = [None] * self.horizon
@@ -139,11 +141,16 @@ class ILQG:
                 # cal Ks
                 k, kk, new_vx, new_vxx = self.cal_Ks(q_x, q_u, q_xx, q_uu, q_ux)
 
-                # for m, name in zip([q_x, q_u, q_xx, q_uu, q_ux, k, kk, new_vx, new_vxx],
-                #                    ["q_x", "q_u", "q_xx", "q_uu", "q_ux", "k", "kk", "new_vx", "new_vxx"]):
-                #     if misc.check_val(m):
-                #         print(name)
-                #         raise RuntimeError("fasdds")
+                for m, name in zip([q_x, q_u, q_xx, q_uu, q_ux, k, kk, new_vx, new_vxx],
+                                   ["q_x", "q_u", "q_xx", "q_uu", "q_ux", "k", "kk", "new_vx", "new_vxx"]):
+                    if misc.check_val(m):
+                        print(name)
+                        raise RuntimeError("fasdds")
+
+                if k is None or kk is None:
+                    mu, d = self.increase_val(mu, d, self.d0)
+                    safe = False
+                    break
 
                 # record
                 k_seq[i] = k
@@ -155,12 +162,13 @@ class ILQG:
 
             if safe:
                 accept = True
+                valid_pair = (k_seq, kk_seq, mu, d, j1, j2)
                 mu, d = self.decrease_val(mu, d, self.d0)
 
         if not accept:
             raise RuntimeError("Backward failed")
 
-        return k_seq, kk_seq, mu, d, j1, j2
+        return valid_pair
 
     def cal_traj(self, x_seq, u_seq, k_seq, kk_seq, a):
         new_x_seq = [None] * self.horizon
@@ -211,6 +219,8 @@ class ILQG:
         loop_num = 0
         a = 1
 
+        min_pair = None
+        min_cost = None
         while not accept and loop_num < self.max_loops:
             loop_num += 1
 
@@ -226,11 +236,15 @@ class ILQG:
             a = a / self.a0
             if z < 0:
                 accept = True
+            elif min_cost is None or min_cost > new_cost:
+                min_cost = new_cost
+                min_pair = (False, new_x_seq, new_u_seq, packs, new_cost)
 
         if not accept:
             print("Forward failed")
+            return min_pair
 
-        return new_x_seq, new_u_seq, packs, new_cost
+        return True, new_x_seq, new_u_seq, packs, new_cost
 
     @jax.partial(jax.jit, static_argnums=(0,))
     def compute_der(self, x, u):
@@ -252,6 +266,29 @@ class ILQG:
             derivs.append(self.compute_der(x, u))
         return derivs
 
+    def zero_traj(self, first_x, first_pack):
+        x_seq = [first_x]
+        u_seq = []
+        packs = [first_pack]
+
+        self.model_sim.set(first_pack)
+
+        for i in range(self.horizon - 1):
+            x = x_seq[i]
+            u = [0.0] * self.num_u
+            u_seq.append(np.array(u))
+
+            new_x = self.model_sim.sim(u)
+            x_seq.append(np.array(new_x))
+            packs.append(self.model_sim.get_pack())
+
+        u_seq.append(u_seq[-1])
+
+        cost = self.cost(x_seq, u_seq)
+
+        return x_seq, u_seq, packs, cost
+
+
     def predict(self, x_seq, u_seq, packs, last_cost):
         self.packs = packs
 
@@ -260,6 +297,8 @@ class ILQG:
 
         if self.num_x is None:
             self.num_x = len(x_seq[0])
+        if self.num_u is None:
+            self.num_u = len(u_seq[0])
 
         # for _ in trange(self.per_iter, desc='ILQR', leave=False):
         for _ in range(self.per_iter):
@@ -269,7 +308,18 @@ class ILQG:
             # compute k
             k_seq, kk_seq, mu, d, j1, j2 = self.backward(x_seq[-1], derivs, mu, d)
 
+            if None in k_seq[:-1] or None in kk_seq[:-1]:
+                print("Invalid backward")
+                print("Using zero trajectory")
+                return self.zero_traj(x_seq[0], self.packs[0])
+
             # compute u
-            x_seq, u_seq, self.packs, cost = self.forward(x_seq, u_seq, k_seq, kk_seq, j1, j2, last_cost)
+            ret, new_x_seq, new_u_seq, new_packs, new_cost = self.forward(x_seq, u_seq, k_seq, kk_seq, j1, j2, last_cost)
+
+            # if ret is False:
+            #     print("Using zero trajectory")
+            #     return self.zero_traj(x_seq[0], self.packs[0])
+            # else:
+            x_seq, u_seq, self.packs, cost = new_x_seq, new_u_seq, new_packs, new_cost
 
         return x_seq, u_seq, self.packs, cost
