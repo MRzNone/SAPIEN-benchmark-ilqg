@@ -20,7 +20,7 @@ class JointInfo:
         self.childs = []
         self.qId = None
         self.index = None
-        self.name = joint.get_name()
+        self.name = joint.get_child_link().get_name()
 
     def add_child(self, child):
         self.childs.append(child)
@@ -72,7 +72,6 @@ class ForwardKinematics:
 
             parentInfo.add_child(joint_dict[j.get_child_link()])
 
-    # @jax.partial(jax.jit, static_argnums=(0, 2))
     def fk_recurse(self, pMat, joint: JointInfo, qPos: list, res: dict):
         # get theta
         theta = 0.0
@@ -89,7 +88,7 @@ class ForwardKinematics:
         for child in joint.childs:
             self.fk_recurse(mat, child, qPos, res)
 
-    @jax.partial(jax.jit, static_argnums=(0,))
+    @jax.partial(jax.jit, static_argnums=(0, 2))
     def fk(self, state, ifDict=False):
         if self.root is None:
             return None
@@ -103,6 +102,10 @@ class ForwardKinematics:
         self.fk_recurse(base_mat, self.root, qPos, res)
 
         if ifDict:
+            # arr = []
+            # for n, v in res.items():
+            #     arr.append(v)
+            # return res, np.array(arr)
             return res
         else:
             arr = []
@@ -167,7 +170,6 @@ class Dynamics:
         dvdu = inv_mass.T * self.timestep
 
         return np.vstack((dpdu, dvdu))
-
 
     @jax.partial(jax.jit, static_argnums=(0,))
     def inverse(self, x):

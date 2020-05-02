@@ -21,7 +21,7 @@ renderer = sapien.OptifuserRenderer()
 sim.set_renderer(renderer)
 render_controller = sapien.OptifuserController(renderer)
 
-#%%
+# %%
 
 copper = sapien.PxrMaterial()
 copper.set_base_color([0.875, 0.553, 0.221, 1])
@@ -54,6 +54,7 @@ ant_poses = {
         Pose([-0.141, 0, 0], [0, 0.7071068, 0.7071068, 0]),
         Pose([0.282, 0, 0], [0, 0.7071068, 0.7071068, 0])),
 }
+
 
 def create_ant_builder(scene):
     builder = scene.create_articulation_builder()
@@ -136,6 +137,7 @@ def create_ant_builder(scene):
 
     return builder
 
+
 # %%
 
 DEBUG = False
@@ -191,6 +193,7 @@ deri = MathForwardDynamics(create_scene, optim_timestep, robot.pack(), True, Tru
 fk = ForwardKinematics(robot)
 sim_worker = ModelSim(create_scene, optim_timestep)
 
+
 # %%
 
 def smooth_abs(x, alpha):
@@ -210,7 +213,7 @@ per_iter = 1
 
 robo_pose = Pose()
 
-@jit
+
 def final_cost(x, alpha1=0.2, alpha2=0.5, alpha3=0.5):
     # add base pose
     qpos = x[:dof]
@@ -231,11 +234,15 @@ def final_cost(x, alpha1=0.2, alpha2=0.5, alpha3=0.5):
     return term1 + term2
 
 
-@jit
+final_cost = jit(final_cost, backend='gpu')
+
+
 def running_cost(x, u, alpha=0.7):
     term1 = smooth_abs(u / factor, alpha) / horizon * 5
     return term1
 
+
+running_cost = jit(running_cost, backend='gpu')
 
 # %%
 
@@ -304,6 +311,9 @@ if IF_PLOT:
     fig.canvas.draw()
 
 last_cost = 0
+for x, u in zip(x_seq[:-1], u_seq[:-1]):
+    last_cost += running_cost(x, u)
+last_cost += final_cost(x_seq[-1])
 
 render_controller.show_window()
 s0.update_render()

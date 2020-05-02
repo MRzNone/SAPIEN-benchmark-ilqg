@@ -10,7 +10,7 @@ from tqdm import tqdm, trange
 from Tools import SimWorker, misc, ModelDerivator
 
 
-class ILQG:
+class ILQG_Human:
     def __init__(self, final_cost, running_cost, model, u_range, horizon, per_iter, model_der: ModelDerivator = None,
                  model_sim: SimWorker = None, DEBUG=False, d0=2.0, a0=3, max_loops=10):
         """
@@ -47,8 +47,8 @@ class ILQG:
         self.l_uu = jacfwd(self.l_u, 1)
         self.l_ux = jacrev(self.l_u, 0)
 
-        self.v_x = jacrev(self.v)
-        self.v_xx = jacfwd(self.v_x)
+        self.v_x = jacrev(self.v, 0)
+        self.v_xx = jacfwd(self.v_x, 0)
 
         if model_der is None:
             self.f_x = jacrev(self.f, 0)
@@ -110,12 +110,12 @@ class ILQG:
 
         return val, factor
 
-    def backward(self, last_x, derivs, mu, d):
+    def backward(self, last_x, derivs, mu, d, root_pos, jaco):
         """
             Calculate all the necessary derivatives, and compute the Ks
         """
-        orig_v_x = self.v_x(last_x)
-        orig_v_xx = self.v_xx(last_x)
+        orig_v_x = self.v_x(last_x, root_pos, jaco)
+        orig_v_xx = self.v_xx(last_x, root_pos, jaco)
         accept = False
         valid_pair = None
 
@@ -205,17 +205,17 @@ class ILQG:
         return new_x_seq, new_u_seq, packs
 
     @jax.partial(jax.jit, static_argnums=(0,), backend='gpu')
-    def cost(self, x_seq, u_seq):
+    def cost(self, x_seq, u_seq, root_pos, jaco):
         total_cost = 0
 
         for x, u in zip(x_seq[:-1], u_seq[:-1]):
             total_cost += self.l(x, u)
 
-        total_cost += self.v(x_seq[-1])
+        total_cost += self.v(x_seq[-1], root_pos, jaco)
 
         return total_cost
 
-    def forward(self, x_seq, u_seq, k_seq, kk_seq, j1, j2, last_cost):
+    def forward(self, x_seq, u_seq, k_seq, kk_seq, j1, j2, last_cost, root_pos, jaco):
         accept = False
         loop_num = 0
         a = 1
@@ -227,7 +227,7 @@ class ILQG:
 
             new_x_seq, new_u_seq, packs = self.cal_traj(x_seq, u_seq, k_seq, kk_seq, a)
 
-            new_cost = self.cost(new_x_seq, new_u_seq)
+            new_cost = self.cost(new_x_seq, new_u_seq, root_pos, jaco)
 
             dj = a * j1 + a ** 2 / 2.0 * j2
 
@@ -267,7 +267,7 @@ class ILQG:
             derivs.append(self.compute_der(x, u))
         return derivs
 
-    def zero_traj(self, first_x, first_pack):
+    def zero_traj(self, first_x, first_pack, root_pos, jaco):
         x_seq = [first_x]
         u_seq = []
         packs = [first_pack]
@@ -285,11 +285,11 @@ class ILQG:
 
         u_seq.append(u_seq[-1])
 
-        cost = self.cost(x_seq, u_seq)
+        cost = self.cost(x_seq, u_seq, root_pos, jaco)
 
         return x_seq, u_seq, packs, cost
 
-    def predict(self, x_seq, u_seq, packs, last_cost):
+    def predict(self, x_seq, u_seq, packs, last_cost, root_pos, jaco):
         self.packs = packs
 
         d = 1
@@ -306,16 +306,16 @@ class ILQG:
             derivs = self.compute_derivatives(x_seq, u_seq)
 
             # compute k
-            k_seq, kk_seq, mu, d, j1, j2 = self.backward(x_seq[-1], derivs, mu, d)
+            k_seq, kk_seq, mu, d, j1, j2 = self.backward(x_seq[-1], derivs, mu, d, root_pos, jaco)
 
             if None in k_seq[:-1] or None in kk_seq[:-1]:
                 print("Invalid backward")
                 print("Using zero trajectory")
-                return self.zero_traj(x_seq[0], self.packs[0])
+                return self.zero_traj(x_seq[0], self.packs[0], root_pos, jaco)
 
             # compute u
             ret, new_x_seq, new_u_seq, new_packs, new_cost = self.forward(x_seq, u_seq, k_seq, kk_seq, j1, j2,
-                                                                          last_cost)
+                                                                          last_cost, root_pos, jaco)
 
             # if ret is False:
             #     print("Using zero trajectory")
