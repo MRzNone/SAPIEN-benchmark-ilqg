@@ -5,6 +5,7 @@ import time
 from joblib import Parallel, delayed
 import numpy as onp
 from tqdm import tqdm, trange
+from joblib import Parallel, delayed, wrap_non_picklable_objects
 # from tqdm.notebook import tqdm, trange
 
 from Tools import SimWorker, misc, ModelDerivator
@@ -68,6 +69,8 @@ class ILQG_Human:
             [jit(e, backend='gpu') for e in
              [self.l, self.l_u, self.l_uu, self.l_ux, self.l_x, self.l_xx,
               self.v, self.v_x, self.v_xx, self.f_u, self.f_x]]
+
+        self.vmap_l = jit(jax.vmap(self.l, in_axes=(0, 0)), backend='gpu')
 
     @jax.partial(jax.jit, static_argnums=(0,), backend='gpu')
     def cal_Qs(self, lx, lu, lxx, luu, lux, fx, fu, vx, vxx, mu):
@@ -172,10 +175,8 @@ class ILQG_Human:
         return valid_pair
 
     def cal_traj(self, x_seq, u_seq, k_seq, kk_seq, a):
-        new_x_seq = [None] * self.horizon
-        new_u_seq = [None] * self.horizon
-
-        new_x_seq[0] = x_seq[0]
+        new_x_seq = [onp.array(x_seq[0])]
+        new_u_seq = []
 
         if self.packs is not None:
             packs = [self.packs[0]]
@@ -183,33 +184,45 @@ class ILQG_Human:
         else:
             packs = None
 
+        u_seq = onp.array(u_seq[:-1])
+        k_seq = onp.array(k_seq[:-1])
+
+        uak_seq = onp.array(u_seq + a * k_seq)
+        x_seq = onp.array(x_seq)
+        kk_seq = onp.array(kk_seq)
+
         # for i in trange(self.horizon - 1, desc='forward', leave=False):
         for i in range(self.horizon - 1):
             x = new_x_seq[i]
 
-            new_u = u_seq[i] + a * k_seq[i] + kk_seq[i] @ (x - x_seq[i])
-            new_u = np.clip(new_u, self.u_range[0], self.u_range[1])
+            new_u = uak_seq[i] + kk_seq[i] @ (x - x_seq[i])
+            new_u = onp.clip(new_u, self.u_range[0], self.u_range[1])
             new_x = self.f(x, new_u)
 
             if self.packs is not None:
                 pack = self.model_sim.get_pack()
                 packs.append(pack)
 
-            new_u_seq[i] = new_u
-            new_x_seq[i + 1] = new_x
+            new_u_seq.append(new_u)
+            new_x_seq.append(new_x)
 
-        new_u_seq[-1] = new_u_seq[-2]  # filling
+        new_u_seq.append(new_u_seq[-1])  # filling
         if self.packs is not None:
-            packs[-1] = packs[-2]
+            packs.append(packs[-1])
 
         return new_x_seq, new_u_seq, packs
 
-    @jax.partial(jax.jit, static_argnums=(0,), backend='gpu')
+    # @jax.partial(jax.jit, static_argnums=(0,), backend='gpu')
     def cost(self, x_seq, u_seq, root_pos, jaco):
-        total_cost = 0
+        # total_cost = 0
 
-        for x, u in zip(x_seq[:-1], u_seq[:-1]):
-            total_cost += self.l(x, u)
+        # for x, u in zip(x_seq[:-1], u_seq[:-1]):
+        #     total_cost += self.l(x, u)
+
+        x_batch = np.array(x_seq[:-1])
+        u_batch = np.array(u_seq[:-1])
+
+        total_cost = np.sum(self.vmap_l(x_batch, u_batch))
 
         total_cost += self.v(x_seq[-1], root_pos, jaco)
 
