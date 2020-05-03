@@ -13,7 +13,7 @@ from Tools import SimWorker, misc, ModelDerivator
 
 class ILQG_Human:
     def __init__(self, final_cost, running_cost, model, u_range, horizon, per_iter, model_der: ModelDerivator = None,
-                 model_sim: SimWorker = None, DEBUG=False, d0=2.0, a0=3, max_loops=10):
+                 model_sim: SimWorker = None, DEBUG=False, d0=2.0, a0=0.9, max_loops=10):
         """
             final_cost:     v(x)    ->  cost, float
             running_cost:   l(x, u) ->  cost, float
@@ -247,7 +247,7 @@ class ILQG_Human:
             z = (last_cost - new_cost) / dj
 
             # check if safe
-            a = a / self.a0
+            a = a * self.a0
             if z < 0:
                 accept = True
             elif min_cost is None or min_cost > new_cost:
@@ -260,24 +260,63 @@ class ILQG_Human:
 
         return True, new_x_seq, new_u_seq, packs, new_cost
 
+    # @jax.partial(jax.jit, static_argnums=(0,), backend='gpu')
+    # def compute_der(self, x, u):
+    #     lx = self.l_x(x, u)
+    #     lu = self.l_u(x, u)
+    #     lxx = self.l_xx(x, u)
+    #     luu = self.l_uu(x, u)
+    #     lux = self.l_ux(x, u)
+    #     fx = self.f_x(x, u)
+    #     fu = self.f_u(x, u)
+    #
+    #     return lx, lu, lxx, luu, lux, fx, fu
+    #
+    # @jax.partial(jax.jit, static_argnums=(0,), backend='gpu')
+    # def compute_derivatives(self, x_seq, u_seq):
+    #     derivs = []
+    #     for x, u, pack in zip(x_seq, u_seq, self.packs):
+    #         self.model_der.set_pack(pack)
+    #         derivs.append(self.compute_der(x, u))
+    #     return derivs
+
     @jax.partial(jax.jit, static_argnums=(0,), backend='gpu')
-    def compute_der(self, x, u):
+    def compute_der_math(self, x, u):
         lx = self.l_x(x, u)
         lu = self.l_u(x, u)
         lxx = self.l_xx(x, u)
         luu = self.l_uu(x, u)
         lux = self.l_ux(x, u)
         fx = self.f_x(x, u)
-        fu = self.f_u(x, u)
+        # fu = self.f_u(x, u)
 
-        return lx, lu, lxx, luu, lux, fx, fu
+        return lx, lu, lxx, luu, lux, fx
 
     @jax.partial(jax.jit, static_argnums=(0,), backend='gpu')
-    def compute_derivatives(self, x_seq, u_seq):
+    def compute_derivatives_math(self, x_seq, u_seq):
+        derivs = []
+        for x, u in zip(x_seq, u_seq):
+            derivs.append(self.compute_der_math(x, u))
+        return derivs
+
+    def compute_derivatives_sim(self, x_seq, u_seq):
         derivs = []
         for x, u, pack in zip(x_seq, u_seq, self.packs):
             self.model_der.set_pack(pack)
-            derivs.append(self.compute_der(x, u))
+            fu = self.model_der.fu(x, u)
+
+            derivs.append(fu)
+        return derivs
+
+
+    def compute_derivatives(self, x_seq, u_seq):
+        deriv_math = self.compute_derivatives_math(x_seq, u_seq)
+        deriv_num = self.compute_derivatives_sim(x_seq, u_seq)
+
+        derivs = []
+        for i in range(len(deriv_num)):
+            derivs.append((*deriv_math[i], deriv_num[i]))
+
         return derivs
 
     def zero_traj(self, first_x, first_pack, root_pos, jaco):
@@ -296,6 +335,21 @@ class ILQG_Human:
             x_seq.append(np.array(new_x))
             packs.append(self.model_sim.get_pack())
 
+        u_seq.append(u_seq[-1])
+
+        cost = self.cost(x_seq, u_seq, root_pos, jaco)
+
+        return x_seq, u_seq, packs, cost
+
+    def complete_last_traj(self, x_seq, u_seq, packs, root_pos, jaco):
+        x_seq = x_seq[1:]
+        u_seq = u_seq[1:]
+        packs = packs[1:]
+
+        self.model_sim.set(packs[-1])
+        new_x = self.model_sim.sim(u_seq[-1])
+        x_seq.append(new_x)
+        packs.append(self.model_sim.get_pack())
         u_seq.append(u_seq[-1])
 
         cost = self.cost(x_seq, u_seq, root_pos, jaco)
@@ -323,17 +377,17 @@ class ILQG_Human:
 
             if None in k_seq[:-1] or None in kk_seq[:-1]:
                 print("Invalid backward")
-                print("Using zero trajectory")
-                return self.zero_traj(x_seq[0], self.packs[0], root_pos, jaco)
+                print("Using last trajectory")
+                return self.complete_last_traj(x_seq, u_seq, packs, root_pos, jaco)
 
             # compute u
             ret, new_x_seq, new_u_seq, new_packs, new_cost = self.forward(x_seq, u_seq, k_seq, kk_seq, j1, j2,
                                                                           last_cost, root_pos, jaco)
 
-            # if ret is False:
-            #     print("Using zero trajectory")
-            #     return self.zero_traj(x_seq[0], self.packs[0])
-            # else:
-            x_seq, u_seq, self.packs, cost = new_x_seq, new_u_seq, new_packs, new_cost
+            if new_cost > last_cost:
+                print("Using last trajectory")
+                return self.complete_last_traj(x_seq, u_seq, packs, root_pos, jaco)
+            else:
+                x_seq, u_seq, self.packs, cost = new_x_seq, new_u_seq, new_packs, new_cost
 
         return x_seq, u_seq, self.packs, cost

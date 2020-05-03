@@ -1,9 +1,11 @@
 # %%
+import sys
 from datetime import datetime
 
 import sapien.core as sapien
 from sapien.core import Pose
-from Tools import misc, ForwardKinematics, ModelSim, NumForwardDynamicsDer, MathForwardDynamics
+from Tools import misc, ForwardKinematics, ModelSim, NumForwardDynamicsDer, MathForwardDynamics, DerivativeFactory, \
+    DerivativeWorker
 import numpy as onp
 import jax.numpy as np
 from jax import jit, jacfwd, jacrev, grad
@@ -45,20 +47,24 @@ def create_scene(timestep, visual):
     for joint in robot.get_joints():
         joint.set_drive_property(stiffness=0, damping=10)
 
-    for _ in range(int(1/timestep) * 4):
+    for _ in range(int(1 / timestep) * 4):
         s.step()
 
     return s, robot
 
 
 # renderer_timestep = 1 / 60
-optim_timestep = 1 / 500
+optim_timestep = 1 / 200
 sim_timestep = 1 / 60
 render_steps = int(sim_timestep / optim_timestep) + 1
 s0, robot = create_scene(optim_timestep, True)
 
-render_controller.set_camera_position(-5, 0, 0)
+render_controller.set_camera_position(0, -5, 0)
 render_controller.set_current_scene(s0)
+
+state = misc.get_state(robot)
+num_x = len(state)
+num_u = robot.dof
 
 # %%
 
@@ -76,8 +82,9 @@ render_controller.set_current_scene(s0)
 # %%
 
 # _, robot2 = create_scene(optim_timestep, False)
-deri = MathForwardDynamics(create_scene, optim_timestep, robot.pack(), True, True, True)
+# deri = MathForwardDynamics(create_scene, optim_timestep, robot.pack(), True, True, True)
 # deri = NumForwardDynamicsDer(robot, sim_timestep)
+deri = DerivativeWorker(num_x, num_u, create_scene, optim_timestep)
 fk = ForwardKinematics(robot)
 sim_worker = ModelSim(create_scene, optim_timestep)
 
@@ -91,15 +98,19 @@ def smooth_abs(x, alpha):
 robo_pose = robot.get_root_pose()
 
 dof = robot.dof
-factor = np.array([200] * robot.dof)
+factor = onp.array([60] * robot.dof)
+# factor[:6] = 30
+# factor[-12:] = 100
+factor = np.array(factor)
+
 u_range = np.array([-factor, factor])
 q_range = robot.get_qlimits().T
 q_mean = np.mean(q_range, axis=0)
 q_radius = q_range[1] - q_mean
 
-pred_time = 0.8
+pred_time = 1.5
 horizon = int(pred_time / optim_timestep) + 1
-per_iter = 2
+per_iter = 1
 
 masses = {}
 for l in robot.get_links():
@@ -107,11 +118,16 @@ for l in robot.get_links():
 mass_ls = np.array(list(masses.values())).flatten()
 mass_sum = np.sum(list(masses.values()))
 
-fk_names = ['torso', 'link1_30', 'link1_31', 'left_upper_arm', 'link1_33', 'left_lower_arm', 'link1_25', 'link1_26', 'right_upper_arm', 'link1_28', 'right_lower_arm', 'link1_2', 'link1_3', 'lwaist', 'link1_5', 'pelvis', 'link1_16', 'link1_17', 'link1_18', 'left_thigh', 'link1_20', 'left_shin', 'link1_22', 'link1_23', 'left_foot', 'link1_7', 'link1_8', 'link1_9', 'right_thigh', 'link1_11', 'right_shin', 'link1_13', 'link1_14', 'right_foot']
+fk_names = ['torso', 'link1_30', 'link1_31', 'left_upper_arm', 'link1_33', 'left_lower_arm', 'link1_25', 'link1_26',
+            'right_upper_arm', 'link1_28', 'right_lower_arm', 'link1_2', 'link1_3', 'lwaist', 'link1_5', 'pelvis',
+            'link1_16', 'link1_17', 'link1_18', 'left_thigh', 'link1_20', 'left_shin', 'link1_22', 'link1_23',
+            'left_foot', 'link1_7', 'link1_8', 'link1_9', 'right_thigh', 'link1_11', 'right_shin', 'link1_13',
+            'link1_14', 'right_foot']
 mass_fk_ls = np.array([masses[name] for name in fk_names])
 
+
 @jit
-def final_cost(x, root_pos, jaco, alpha1=0.2, alpha2=0.5, alpha3=0.5):
+def final_cost(x, root_pos, jaco):
     # add base pose
     qpos = x[:dof]
     qvel = x[dof:]
@@ -137,27 +153,31 @@ def final_cost(x, root_pos, jaco, alpha1=0.2, alpha2=0.5, alpha3=0.5):
     torso = pos_dict['torso']
 
     # com velocity, doubtful
-    velo = (jaco @ qvel).reshape(-1, 6)
+    velo = (jaco @ qvel).reshape(-1, 6)[:, :3]
     velo_com = np.mean(velo.T * mass_ls[1:], axis=0).T
 
     # com and feet mid
-    term1 = np.sum(smooth_abs(com[:2] - feet_mid[:2], alpha1))
+    term1 = np.mean(smooth_abs(com[:2] - feet_mid[:2], 0.4))
 
     # torso and com
-    term2 = np.sum(smooth_abs(torso[:2] - com[:2], alpha1))
+    term2 = np.mean(smooth_abs(com[:2] - torso[:2], 0.4))
 
     # torso and air point
     air_pt = feet_mid + np.array([0, 0, 1.3])
-    term3 = np.sum(smooth_abs(torso - air_pt, alpha1))
-    term3 = term3 * 1.3
+    h_diff = torso[2] - air_pt[2]
+    term3 = np.mean(smooth_abs(h_diff, 0.3)) * 2
 
     # com velo
-    term4 = np.sum(velo_com[:2] ** 2)
+    term4 = np.mean(velo_com[:2] ** 2)
+
+    # keep foot close
+    # term5 = np.sum(smooth_abs(lfoot - rfoot, 0.4))
 
     return term1 + term2 + term3 + term4
 
+
 @jit
-def running_cost(x, u, alpha=0.7):
+def running_cost(x, u, alpha=1.5):
     term1 = smooth_abs(u / factor, alpha) / horizon
     return np.mean(term1)
 
@@ -166,11 +186,8 @@ def running_cost(x, u, alpha=0.7):
 
 ilqg = ILQG_Human(final_cost, running_cost, None, u_range, horizon, per_iter, deri, sim_worker, DEBUG)
 
-# %%
 
-state = misc.get_state(robot)
-num_x = len(state)
-num_u = robot.dof
+# %%
 
 
 def prep():
@@ -205,15 +222,15 @@ x_seq, u_seq, pack_seq = prep()
 root_pos = robot.get_pose()
 root_pos = np.concatenate([root_pos.p, root_pos.q])
 jaco = np.array(robot.compute_jacobian())
+# jaco = None
 
 last_cost = 0
 for x, u in zip(x_seq[:-1], u_seq[:-1]):
     last_cost += running_cost(x, u)
 last_cost += final_cost(x_seq[-1], root_pos, jaco)
 
-
 IF_RECORD = True
-IF_PLOT = False
+IF_PLOT = True
 
 if IF_RECORD:
     # records
@@ -240,92 +257,96 @@ if IF_PLOT:
 
 last_cost = 0
 
-u_file = open("HUMAN_U_"+str(datetime.now()), 'a')
+u_file = open("HUMAN_U_" + str(datetime.now()), 'a')
 
-render_controller.show_window()
-render_controller.focus(robot.get_links()[0])
-for i in range(2000):
-    s0.update_render()
-    render_controller.render()
+try:
+    render_controller.show_window()
+    render_controller.focus(robot.get_links()[0])
+    for i in range(2000):
+        s0.update_render()
+        render_controller.render()
 
-    root_pos = robot.get_pose()
-    root_pos = np.concatenate([root_pos.p, root_pos.q])
-    jaco = np.array(robot.compute_jacobian())
+        root_pos = robot.get_pose()
+        root_pos = np.concatenate([root_pos.p, root_pos.q])
+        jaco = np.array(robot.compute_jacobian())
+        # jaco = np.array([1])
 
-    st = timeit.default_timer()
-    x_seq, u_seq, pack_seq, last_cost = ilqg.predict(x_seq, u_seq, pack_seq, last_cost, root_pos, jaco)
-    print(timeit.default_timer() - st)
+        st = timeit.default_timer()
+        x_seq, u_seq, pack_seq, last_cost = ilqg.predict(x_seq, u_seq, pack_seq, last_cost, root_pos, jaco)
+        print(timeit.default_timer() - st)
 
-    u = u_seq[0]
-    u_file.write(str(u) + "\n")
+        u = u_seq[0]
+        u_file.write(str(u) + "\n")
 
-    robot.set_qf(u + robot.compute_passive_force())
-    for _ in range(render_steps):
-        s0.step()
+        for _ in range(render_steps):
+            robot.set_qf(u)
+            s0.step()
 
-    new_x = misc.get_state(robot)
-    new_pack = robot.pack()
+        new_x = misc.get_state(robot)
+        new_pack = robot.pack()
 
-    if IF_RECORD or IF_PLOT:
-        f_cost = final_cost(x_seq[-1], root_pos, jaco)
-        run_cost = onp.sum([running_cost(x, u) for x, u in zip(x_seq[:-1], u_seq[:-1])])
-        cost = f_cost + run_cost
+        if IF_RECORD or IF_PLOT:
+            f_cost = final_cost(x_seq[-1], root_pos, jaco)
+            run_cost = onp.sum([running_cost(x, u) for x, u in zip(x_seq[:-1], u_seq[:-1])])
+            cost = f_cost + run_cost
+
+        if IF_RECORD:
+            # record
+            ctrl_record.append(u)
+            x_record.append(x_seq)
+            u_record.append(u_seq)
+
+        if IF_RECORD or IF_PLOT:
+            f_cost_record.append(f_cost)
+            run_cost_record.append(run_cost)
+
+        # update x and u here, since we need to record old x u
+        x_seq[0] = new_x
+        pack_seq[0] = new_pack
+
+        # plot
+        if IF_PLOT:
+            total.append(cost)
+            f_ax.clear()
+            r_ax.clear()
+            t_ax.clear()
+
+            y_lim = np.max(total[-PLOT_LEN:]) * 1.2
+            f_ax.set_ylim(0, y_lim)
+            r_ax.set_ylim(0, y_lim)
+            t_ax.set_ylim(0, y_lim)
+
+            x_lim = max(0, i - PLOT_LEN) - 1
+            f_ax.set_xlim(x_lim, i)
+            r_ax.set_xlim(x_lim, i)
+            t_ax.set_xlim(x_lim, i)
+
+            f_ax.plot(f_cost_record)
+            f_ax.set_title("Final")
+            r_ax.plot(run_cost_record)
+            r_ax.set_title("Running")
+
+            t_ax.plot(total, label="Total")
+            t_ax.plot(f_cost_record, label="Final")
+            t_ax.plot(run_cost_record, label="Running")
+            t_ax.legend()
+            t_ax.set_title("Total")
+
+            fig.canvas.draw()
+            fig.show()
+
+    u_file.close()
 
     if IF_RECORD:
-        # record
-        ctrl_record.append(u)
-        x_record.append(x_seq)
-        u_record.append(u_seq)
+        records = {
+            'ctrl_record': ctrl_record,
+            'x_record': x_record,
+            'u_record': u_record,
+            'run_cost_record': run_cost_record,
+            'f_cost_record': f_cost_record,
+            'ini_state': ini_state,
+        }
 
-    if IF_RECORD or IF_PLOT:
-        f_cost_record.append(f_cost)
-        run_cost_record.append(run_cost)
-
-    # update x and u here, since we need to record old x u
-    x_seq[0] = new_x
-    pack_seq[0] = new_pack
-
-    # plot
-    if IF_PLOT:
-        total.append(cost)
-        f_ax.clear()
-        r_ax.clear()
-        t_ax.clear()
-
-        y_lim = np.max(total[-PLOT_LEN:]) * 1.2
-        f_ax.set_ylim(0, y_lim)
-        r_ax.set_ylim(0, y_lim)
-        t_ax.set_ylim(0, y_lim)
-
-        x_lim = max(0, i - PLOT_LEN) - 1
-        f_ax.set_xlim(x_lim, i)
-        r_ax.set_xlim(x_lim, i)
-        t_ax.set_xlim(x_lim, i)
-
-        f_ax.plot(f_cost_record)
-        f_ax.set_title("Final")
-        r_ax.plot(run_cost_record)
-        r_ax.set_title("Running")
-
-        t_ax.plot(total, label="Total")
-        t_ax.plot(f_cost_record, label="Final")
-        t_ax.plot(run_cost_record, label="Running")
-        t_ax.legend()
-        t_ax.set_title("Total")
-
-        fig.canvas.draw()
-        fig.show()
-
-u_file.close()
-
-if IF_RECORD:
-    records = {
-        'ctrl_record': ctrl_record,
-        'x_record': x_record,
-        'u_record': u_record,
-        'run_cost_record': run_cost_record,
-        'f_cost_record': f_cost_record,
-        'ini_state': ini_state,
-    }
-
-    np.save('records' + str(datetime.utcnow()), records)
+        np.save('records' + str(datetime.utcnow()), records)
+except:
+    deri.terminate()

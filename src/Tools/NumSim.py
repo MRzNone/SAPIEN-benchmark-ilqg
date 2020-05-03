@@ -57,7 +57,7 @@ class ForwardKinematics:
             if j.get_dof() != 0:
                 info.qId = qId
                 qId += 1
-                self.names.append(j.get_name())
+                self.names.append(j.get_child_link().get_name())
 
             joint_dict[j.get_child_link()] = info
             if self.root is None:
