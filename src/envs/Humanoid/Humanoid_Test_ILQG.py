@@ -108,7 +108,7 @@ q_range = robot.get_qlimits().T
 q_mean = np.mean(q_range, axis=0)
 q_radius = q_range[1] - q_mean
 
-pred_time = 1.5
+pred_time = 0.5
 horizon = int(pred_time / optim_timestep) + 1
 per_iter = 1
 
@@ -221,7 +221,7 @@ x_seq, u_seq, pack_seq = prep()
 
 root_pos = robot.get_pose()
 root_pos = np.concatenate([root_pos.p, root_pos.q])
-jaco = np.array(robot.compute_jacobian())
+jaco = np.array(robot.compute_spatial_twist_jacobian())
 # jaco = None
 
 last_cost = 0
@@ -242,6 +242,7 @@ if IF_RECORD:
 if IF_RECORD or IF_PLOT:
     run_cost_record = []
     f_cost_record = []
+    now_cost_record = []
 
 if IF_PLOT:
     fig, axs = plt.subplots(3, figsize=(12, 9))
@@ -259,94 +260,103 @@ last_cost = 0
 
 u_file = open("HUMAN_U_" + str(datetime.now()), 'a')
 
-try:
-    render_controller.show_window()
-    render_controller.focus(robot.get_links()[0])
-    for i in range(2000):
-        s0.update_render()
-        render_controller.render()
+render_controller.show_window()
+render_controller.focus(robot.get_links()[0])
+for i in range(600):
+    s0.update_render()
+    render_controller.render()
 
-        root_pos = robot.get_pose()
-        root_pos = np.concatenate([root_pos.p, root_pos.q])
-        jaco = np.array(robot.compute_jacobian())
-        # jaco = np.array([1])
+    root_pos = robot.get_pose()
+    root_pos = np.concatenate([root_pos.p, root_pos.q])
+    jaco = np.array(robot.compute_spatial_twist_jacobian())
+    # jaco = np.array([1])
 
-        st = timeit.default_timer()
-        x_seq, u_seq, pack_seq, last_cost = ilqg.predict(x_seq, u_seq, pack_seq, last_cost, root_pos, jaco)
-        print(timeit.default_timer() - st)
+    st = timeit.default_timer()
+    x_seq, u_seq, pack_seq, last_cost = ilqg.predict(x_seq, u_seq, pack_seq, last_cost, root_pos, jaco)
+    print(timeit.default_timer() - st)
 
-        u = u_seq[0]
-        u_file.write(str(u) + "\n")
 
-        for _ in range(render_steps):
-            robot.set_qf(u)
-            s0.step()
+    u = u_seq[0]
+    u_file.write(str(u) + "\n")
 
-        new_x = misc.get_state(robot)
-        new_pack = robot.pack()
+    for _ in range(render_steps):
+        robot.set_qf(u)
+        s0.step()
 
-        if IF_RECORD or IF_PLOT:
-            f_cost = final_cost(x_seq[-1], root_pos, jaco)
-            run_cost = onp.sum([running_cost(x, u) for x, u in zip(x_seq[:-1], u_seq[:-1])])
-            cost = f_cost + run_cost
+    root_pos = robot.get_pose()
+    root_pos = np.concatenate([root_pos.p, root_pos.q])
+    jaco = np.array(robot.compute_spatial_twist_jacobian())
+    now_cost = final_cost(misc.get_state(robot), root_pos, jaco)
 
-        if IF_RECORD:
-            # record
-            ctrl_record.append(u)
-            x_record.append(x_seq)
-            u_record.append(u_seq)
+    new_x = misc.get_state(robot)
+    new_pack = robot.pack()
 
-        if IF_RECORD or IF_PLOT:
-            f_cost_record.append(f_cost)
-            run_cost_record.append(run_cost)
-
-        # update x and u here, since we need to record old x u
-        x_seq[0] = new_x
-        pack_seq[0] = new_pack
-
-        # plot
-        if IF_PLOT:
-            total.append(cost)
-            f_ax.clear()
-            r_ax.clear()
-            t_ax.clear()
-
-            y_lim = np.max(total[-PLOT_LEN:]) * 1.2
-            f_ax.set_ylim(0, y_lim)
-            r_ax.set_ylim(0, y_lim)
-            t_ax.set_ylim(0, y_lim)
-
-            x_lim = max(0, i - PLOT_LEN) - 1
-            f_ax.set_xlim(x_lim, i)
-            r_ax.set_xlim(x_lim, i)
-            t_ax.set_xlim(x_lim, i)
-
-            f_ax.plot(f_cost_record)
-            f_ax.set_title("Final")
-            r_ax.plot(run_cost_record)
-            r_ax.set_title("Running")
-
-            t_ax.plot(total, label="Total")
-            t_ax.plot(f_cost_record, label="Final")
-            t_ax.plot(run_cost_record, label="Running")
-            t_ax.legend()
-            t_ax.set_title("Total")
-
-            fig.canvas.draw()
-            fig.show()
-
-    u_file.close()
+    if IF_RECORD or IF_PLOT:
+        f_cost = final_cost(x_seq[-1], root_pos, jaco)
+        run_cost = onp.sum([running_cost(x, u) for x, u in zip(x_seq[:-1], u_seq[:-1])])
+        cost = f_cost + run_cost
 
     if IF_RECORD:
-        records = {
-            'ctrl_record': ctrl_record,
-            'x_record': x_record,
-            'u_record': u_record,
-            'run_cost_record': run_cost_record,
-            'f_cost_record': f_cost_record,
-            'ini_state': ini_state,
-        }
+        # record
+        ctrl_record.append(u)
+        x_record.append(x_seq)
+        u_record.append(u_seq)
 
-        np.save('records' + str(datetime.utcnow()), records)
-except:
-    deri.terminate()
+    if IF_RECORD or IF_PLOT:
+        f_cost_record.append(f_cost)
+        run_cost_record.append(run_cost)
+        now_cost_record.append(now_cost)
+
+    # update x and u here, since we need to record old x u
+    x_seq[0] = new_x
+    pack_seq[0] = new_pack
+
+    # plot
+    if IF_PLOT:
+        total.append(cost)
+        f_ax.clear()
+        r_ax.clear()
+        t_ax.clear()
+
+        y_lim = np.max(total[-PLOT_LEN:]) * 1.2
+        fy_lim = np.max(now_cost_record[-PLOT_LEN:]) * 1.2
+        fy_lim = max(fy_lim, y_lim)
+        f_ax.set_ylim(0, fy_lim)
+        r_ax.set_ylim(0, y_lim)
+        t_ax.set_ylim(0, y_lim)
+
+        x_lim = max(0, i - PLOT_LEN) - 0.1
+        f_ax.set_xlim(x_lim, i)
+        r_ax.set_xlim(x_lim, i)
+        t_ax.set_xlim(x_lim, i)
+
+        f_ax.plot(f_cost_record, label="Final")
+        f_ax.plot(now_cost_record, label="Now")
+        f_ax.legend()
+        f_ax.set_title("Final")
+
+        r_ax.plot(run_cost_record)
+        r_ax.set_title("Running")
+
+        t_ax.plot(total, label="Total")
+        t_ax.plot(f_cost_record, label="Final")
+        t_ax.plot(run_cost_record, label="Running")
+        t_ax.legend()
+        t_ax.set_title("Total")
+
+        fig.canvas.draw()
+        fig.show()
+
+u_file.close()
+
+if IF_RECORD:
+    records = {
+        'ctrl_record': ctrl_record,
+        'x_record': x_record,
+        'u_record': u_record,
+        'run_cost_record': run_cost_record,
+        'f_cost_record': f_cost_record,
+        'ini_state': ini_state,
+    }
+
+    np.save('records' + str(datetime.utcnow()), records)

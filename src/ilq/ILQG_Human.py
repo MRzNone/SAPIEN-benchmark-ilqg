@@ -170,7 +170,7 @@ class ILQG_Human:
                 mu, d = self.decrease_val(mu, d, self.d0)
 
         if not accept:
-            raise RuntimeError("Backward failed")
+            print("Backward failed")
 
         return valid_pair
 
@@ -373,10 +373,17 @@ class ILQG_Human:
             derivs = self.compute_derivatives(x_seq, u_seq)
 
             # compute k
-            k_seq, kk_seq, mu, d, j1, j2 = self.backward(x_seq[-1], derivs, mu, d, root_pos, jaco)
+            back_res = self.backward(x_seq[-1], derivs, mu, d, root_pos, jaco)
+
+            if back_res is None:
+                print("Invalid backward (None)")
+                print("Using last trajectory")
+                return self.complete_last_traj(x_seq, u_seq, packs, root_pos, jaco)
+
+            k_seq, kk_seq, mu, d, j1, j2 = back_res
 
             if None in k_seq[:-1] or None in kk_seq[:-1]:
-                print("Invalid backward")
+                print("Invalid backward (invalid k, kk)")
                 print("Using last trajectory")
                 return self.complete_last_traj(x_seq, u_seq, packs, root_pos, jaco)
 
